@@ -1,0 +1,33 @@
+# Hardhat & Solidity
+node_modules/
+artifacts/
+cache/
+typechain/
+typechain-types/
+coverage/
+coverage.json
+*.runtime.js.map
+
+# Python (FastAPI)
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+
+# Databases
+*.db
+*.sqlite3
+
+# Environment Variables & Private Keys (防私钥泄露)
+.env
+.env.secret
+.env.local
+.env.*.local
+
+# Operating System
+.DS_Store
+Thumbs.db
