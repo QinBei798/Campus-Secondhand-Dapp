@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>校园二手交易平台 — 区块链担保托管</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<style>
+:root {
+  --bg: #f8fafc;
+  --card-bg: #ffffff;
+  --accent: #6366f1;
+  --accent-hover: #4f46e5;
+  --success: #10b981;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+  --text: #1e293b;
+  --text-muted: #64748b;
+  --border: #e2e8f0;
+  --radius: 16px;
+  --shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+}
+body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+
+/* Navbar */
+.navbar-brand { font-weight: 700; letter-spacing: -.02em; }
+.wallet-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.wallet-dot.on { background: var(--success); box-shadow: 0 0 6px var(--success); }
+.wallet-dot.off { background: #94a3b8; }
+
+/* Tab pills */
+.nav-pills .nav-link {
+  border-radius: 12px; padding: 10px 24px; font-weight: 600; font-size: .95rem;
+  color: var(--text-muted); transition: all .2s;
+}
+.nav-pills .nav-link.active { background: var(--accent); color: #fff; box-shadow: 0 4px 12px rgba(99,102,241,.35); }
+.nav-pills .nav-link:hover:not(.active) { background: #f1f5f9; color: var(--text); }
+
+/* Cards */
+.card { border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); transition: transform .15s, box-shadow .15s; }
+.card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.08); }
+.card-header { background: transparent; border-bottom: 1px solid var(--border); font-weight: 600; padding: 16px 20px; }
+
+/* State badges */
+.badge-state { font-size: .78rem; padding: 4px 10px; border-radius: 20px; font-weight: 600; }
+.state-CREATED { background: #dbeafe; color: #1d4ed8; }
+.state-FUNDED { background: #fef3c7; color: #b45309; }
+.state-SHIPPED { background: #e0e7ff; color: #4338ca; }
+.state-RECEIVED { background: #d1fae5; color: #065f46; }
+.state-COMPLETED { background: #d1fae5; color: #065f46; }
+.state-DISPUTED { background: #fee2e2; color: #991b1b; }
+
+/* Buttons */
+.btn-brand { background: var(--accent); color: #fff; border: none; border-radius: 10px; font-weight: 600; padding: 8px 20px; transition: all .2s; }
+.btn-brand:hover { background: var(--accent-hover); color: #fff; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(99,102,241,.35); }
+.btn-outline-brand { border: 2px solid var(--accent); color: var(--accent); background: transparent; border-radius: 10px; font-weight: 600; padding: 8px 20px; }
+.btn-outline-brand:hover { background: var(--accent); color: #fff; }
+
+/* Toast */
+.toast-container { z-index: 9999; }
+.toast { border-radius: 14px; border: none; box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+
+/* Loading spinner */
+.spin { animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Address display */
+.addr { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: .82rem; }
+
+/* Empty states */
+.empty-state { padding: 48px 24px; text-align: center; color: var(--text-muted); }
+.empty-state i { font-size: 3rem; opacity: .4; }
+
+/* Order grid */
+.order-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+
+/* Pulse animation for pending */
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+.pulse { animation: pulse 2s ease-in-out infinite; }
+
+/* Section headers */
+.section-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+.section-title i { color: var(--accent); }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .order-grid { grid-template-columns: 1fr; }
+  .nav-pills .nav-link { padding: 8px 16px; font-size: .85rem; }
+}
+</style>
+</head>
+<body>
+
+<!-- ====== Navbar ====== -->
+<nav class="navbar navbar-expand-lg sticky-top border-bottom" style="background: rgba(255,255,255,.85); backdrop-filter: blur(12px);">
+  <div class="container-fluid px-4">
+    <span class="navbar-brand" style="font-size:1.25rem;">
+      <i class="bi bi-mortarboard-fill" style="color:var(--accent);"></i> Campus Escrow
+    </span>
+    <div class="d-flex align-items-center gap-3 ms-auto">
+      <span id="chainBadge" class="badge bg-light text-dark border addr">—</span>
+      <span><span class="wallet-dot off" id="walletDot"></span></span>
+      <span id="walletAddr" class="addr text-muted" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">未连接</span>
+      <button id="btnConnect" class="btn-brand btn-sm" onclick="connectWallet()">
+        <i class="bi bi-wallet2"></i> 连接钱包
+      </button>
+      <button id="btnDisconnect" class="btn btn-outline-secondary btn-sm d-none" onclick="disconnectWallet()">
+        断开
+      </button>
+    </div>
+  </div>
+</nav>
+
+<!-- ====== Tab Navigation ====== -->
+<div class="container-fluid px-4 pt-3">
+  <ul class="nav nav-pills justify-content-center gap-2 mb-4" id="roleTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" id="tab-seller" data-bs-toggle="pill" data-bs-target="#pane-seller" type="button" role="tab">
+        <i class="bi bi-shop"></i> 学长/卖家面板
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="tab-buyer" data-bs-toggle="pill" data-bs-target="#pane-buyer" type="button" role="tab">
+        <i class="bi bi-bag"></i> 学弟/买家面板
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="tab-arbitrator" data-bs-toggle="pill" data-bs-target="#pane-arbitrator" type="button" role="tab">
+        <i class="bi bi-shield-check"></i> 学校/仲裁员大厅
+      </button>
+    </li>
+  </ul>
+</div>
+
+<!-- ====== Tab Panes ====== -->
+<div class="tab-content container-fluid px-4 pb-5">
+
+  <!-- ───────── SELLER PANE ───────── -->
+  <div class="tab-pane fade show active" id="pane-seller" role="tabpanel">
+    <div class="row g-4">
+      <!-- Left: Create Order -->
+      <div class="col-lg-5">
+        <div class="card">
+          <div class="card-header"><i class="bi bi-plus-circle"></i> 一键挂牌</div>
+          <div class="card-body">
+            <!-- Step 0: Whitelist Registration -->
+            <div id="sellerWhitelistBox" class="alert alert-info mb-3 d-none">
+              <div class="d-flex align-items-center gap-2 mb-2">
+                <i class="bi bi-patch-check"></i> <strong>步骤 0：白名单注册</strong>
+              </div>
+              <p class="small mb-2 text-muted">首次使用需通过 Merkle Proof 验证身份</p>
+              <button class="btn btn-sm btn-info" onclick="registerWhitelist()">
+                <i class="bi bi-key"></i> 验证学号身份（Merkle Proof）
+              </button>
+            </div>
+
+            <div id="sellerWhitelistOk" class="alert alert-success mb-3 d-none">
+              <i class="bi bi-check-circle"></i> 白名单已验证 <span class="addr small" id="sellerWhitelistAddr"></span>
+            </div>
+
+            <form id="createOrderForm" onsubmit="return false;">
+              <div class="mb-3">
+                <label class="form-label fw-semibold small">学弟/买家地址</label>
+                <select class="form-select form-select-sm addr" id="buyerSelect">
+                  <option value="">— 选择 Hardhat 测试账户 —</option>
+                </select>
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-semibold small">价格 (ETH)</label>
+                <div class="input-group input-group-sm">
+                  <input type="number" class="form-control" id="orderPrice" step="0.001" min="0.001" placeholder="0.01" required>
+                  <span class="input-group-text">ETH</span>
+                </div>
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-semibold small">商品哈希描述</label>
+                <input type="text" class="form-control form-control-sm" id="orderDesc" placeholder="例如: MacBook Pro 2024 — 95新 — 箱说全" maxlength="200">
+                <div class="form-text small">此描述将上链存证，不可篡改</div>
+              </div>
+              <button class="btn-brand w-100" onclick="createOrder()" id="btnCreateOrder" disabled>
+                <i class="bi bi-lightning-charge"></i> 一键挂牌上链
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: My Selling Items -->
+      <div class="col-lg-7">
+        <div class="section-title"><i class="bi bi-grid-3x3-gap"></i> 我正在卖的物品</div>
+        <div id="sellerOrderList" class="order-grid">
+          <div class="empty-state w-100"><i class="bi bi-inbox d-block"></i>暂无挂牌物品</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───────── BUYER PANE ───────── -->
+  <div class="tab-pane fade" id="pane-buyer" role="tabpanel">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div class="section-title mb-0"><i class="bi bi-shop-window"></i> 全校在售物品 <span class="text-muted small fw-normal">(秒级读取自链下中继)</span></div>
+      <div>
+        <select class="form-select form-select-sm" id="buyerStateFilter" onchange="loadBuyerOrders()" style="width:auto;display:inline;">
+          <option value="">全部状态</option>
+          <option value="CREATED">待付款</option>
+          <option value="FUNDED">已付款</option>
+          <option value="SHIPPED">已发货</option>
+        </select>
+        <button class="btn btn-sm btn-outline-brand ms-2" onclick="loadBuyerOrders()">
+          <i class="bi bi-arrow-clockwise"></i> 刷新
+        </button>
+      </div>
+    </div>
+    <div id="buyerOrderList" class="order-grid">
+      <div class="empty-state w-100"><i class="bi bi-inbox d-block"></i>加载中...</div>
+    </div>
+  </div>
+
+  <!-- ───────── ARBITRATOR PANE ───────── -->
+  <div class="tab-pane fade" id="pane-arbitrator" role="tabpanel">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div class="section-title mb-0"><i class="bi bi-shield-exclamation"></i> 纠纷中订单 <span class="text-muted small fw-normal">(2/3 多签仲裁)</span></div>
+      <button class="btn btn-sm btn-outline-brand" onclick="loadArbitratorDisputes()">
+        <i class="bi bi-arrow-clockwise"></i> 刷新
+      </button>
+    </div>
+    <div id="arbitratorDisputeList">
+      <div class="empty-state"><i class="bi bi-emoji-smile d-block"></i>暂无纠纷订单 — 校园和谐</div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== Toast Container ====== -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastBox"></div>
+
+<!-- ====== Scripts ====== -->
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+// ===========================================================================
+// CONFIGURATION — 修改此处以适配部署环境
+// ===========================================================================
+const CONFIG = {
+  apiBase: 'http://localhost:8000',
+  escrowAddress: '0x610178dA211FEF7D417bC0e6FeD39F05609AD788',    // CampusEscrow (deployed)
+  whitelistAddress: '0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6', // MerkleWhitelist (deployed)
+  chainId: 31337,          // Hardhat local
+  chainName: 'Hardhat Local',
+  rpcUrl: 'http://127.0.0.1:8545',
+};
+
+// Hardhat 默认 10 个 Signers (Account #0 ~ #9)
+const HARDHAT_ACCOUNTS = [
+  '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266',
+  '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
+  '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC',
+  '0x90F79bf6EB2c4f870365E785982E1f101E93b906',
+  '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65',
+  '0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc',
+  '0x976EA74026E726554dB657fA54763abd0C3a0aa9',
+  '0x14dC79964da2C08b23698B3D3cc7Ca32193d9955',
+  '0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f',
+  '0xa0Ee7A142d267C1f36714E4a8F75612F20a79720',
+];
+
+// ===========================================================================
+// GLOBAL STATE
+// ===========================================================================
+let wallet = { address: null, provider: null, signer: null };
+let escrow = null;
+
+// ===========================================================================
+// CAMPUS ESCROW ABI (minimal — extract from Hardhat artifact)
+// ===========================================================================
+const ESCROW_ABI = [{"inputs":[{"internalType":"address","name":"_whitelist","type":"address"},{"internalType":"address[]","name":"_arbitrators","type":"address[]"}],"stateMutability":"nonpayable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"disputeId","type":"uint256"},{"indexed":false,"internalType":"bool","name":"refundedBuyer","type":"bool"}],"name":"DisputeResolved","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"disputeId","type":"uint256"},{"indexed":false,"internalType":"address","name":"arbitrator","type":"address"},{"indexed":false,"internalType":"bool","name":"forBuyer","type":"bool"}],"name":"DisputeVoted","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"orderId","type":"uint256"},{"indexed":false,"internalType":"address","name":"seller","type":"address"},{"indexed":false,"internalType":"address","name":"buyer","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"OrderCreated","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"orderId","type":"uint256"},{"indexed":false,"internalType":"address","name":"initiator","type":"address"}],"name":"OrderDisputed","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"orderId","type":"uint256"},{"indexed":false,"internalType":"address","name":"buyer","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"OrderFunded","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"orderId","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"timestamp","type":"uint256"}],"name":"OrderReceived","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"orderId","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"timestamp","type":"uint256"}],"name":"OrderShipped","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"user","type":"address"}],"name":"WhitelistRegistered","type":"event"},{"inputs":[],"name":"ARBITRATOR_COUNT","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"VOTE_THRESHOLD","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"arbitrators","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"_buyer","type":"address"},{"internalType":"uint256","name":"_price","type":"uint256"},{"internalType":"string","name":"_description","type":"string"}],"name":"createOrder","outputs":[{"internalType":"uint256","name":"orderId","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"orderId","type":"uint256"}],"name":"executeArbitration","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"orderId","type":"uint256"}],"name":"fundOrder","outputs":[],"stateMutability":"payable","type":"function"},{"inputs":[{"internalType":"uint256","name":"orderId","type":"uint256"}],"name":"getDisputeVotes","outputs":[{"internalType":"uint256","name":"votesForBuyer","type":"uint256"},{"internalType":"uint256","name":"votesForSeller","type":"uint256"},{"internalType":"bool","name":"resolved","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"getOrderCount","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"isArbitrator","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"isWhitelisted","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"orders","outputs":[{"internalType":"address","name":"buyer","type":"address"},{"internalType":"address","name":"seller","type":"address"},{"internalType":"uint256","name":"amount","type":"uint256"},{"internalType":"uint8","name":"state","type":"uint8"},{"internalType":"string","name":"description","type":"string"},{"internalType":"uint256","name":"disputeId","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"orderId","type":"uint256"},{"internalType":"string","name":"reason","type":"string"}],"name":"raiseDispute","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"orderId","type":"uint256"}],"name":"receiveOrder","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"bytes32[]","name":"proof","type":"bytes32[]"}],"name":"registerWhitelist","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"orderId","type":"uint256"}],"name":"shipOrder","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"orderId","type":"uint256"},{"internalType":"bool","name":"forBuyer","type":"bool"}],"name":"voteOnDispute","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"whitelist","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"}];
+
+// Solidity State enum → display
+const STATE_MAP = { 0:'CREATED', 1:'FUNDED', 2:'SHIPPED', 3:'RECEIVED', 4:'COMPLETED', 5:'DISPUTED' };
+const STATE_CN = { CREATED:'待付款', FUNDED:'已付款待发货', SHIPPED:'已发货待收货', RECEIVED:'已收货', COMPLETED:'已完成', DISPUTED:'纠纷中' };
+const STATE_VARIANT = { CREATED:'info', FUNDED:'warning', SHIPPED:'primary', RECEIVED:'success', COMPLETED:'success', DISPUTED:'danger' };
+
+// ===========================================================================
+// UTILITY
+// ===========================================================================
+function toast(msg, type='info') {
+  const icons = { info:'bi-info-circle', success:'bi-check-circle', error:'bi-exclamation-triangle', warning:'bi-exclamation-circle' };
+  const colors = { info:'bg-dark text-white', success:'bg-success text-white', error:'bg-danger text-white', warning:'bg-warning text-dark' };
+  const box = document.getElementById('toastBox');
+  const id = 't' + Date.now();
+  box.insertAdjacentHTML('beforeend', `
+    <div id="${id}" class="toast ${colors[type]}" role="alert">
+      <div class="toast-body d-flex align-items-center gap-2">
+        <i class="bi ${icons[type]}"></i> ${msg}
+        <button class="btn-close btn-close-white ms-auto" data-bs-dismiss="toast"></button>
+      </div>
+    </div>`);
+  new bootstrap.Toast(document.getElementById(id), { delay: 5000 }).show();
+}
+
+function shortAddr(a) { return a ? a.slice(0,6)+'...'+a.slice(-4) : '—'; }
+
+function weiToEth(wei) {
+  try { return parseFloat(ethers.formatEther(wei)).toFixed(4); } catch(e) { return '0'; }
+}
+
+function formatTs(ts) { return ts ? new Date(ts).toLocaleString('zh-CN') : '—'; }
+
+async function apiGet(path) {
+  const resp = await fetch(`${CONFIG.apiBase}${path}`);
+  if (!resp.ok) throw new Error(`API ${resp.status}: ${resp.statusText}`);
+  return resp.json();
+}
+
+// ===========================================================================
+// WALLET CONNECTION (ethers.js v6)
+// ===========================================================================
+async function connectWallet() {
+  if (!window.ethereum) {
+    toast('未检测到 MetaMask！请安装浏览器插件', 'error');
+    return;
+  }
+  try {
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const network = await provider.getNetwork();
+    if (Number(network.chainId) !== CONFIG.chainId) {
+      toast(`请切换到 ${CONFIG.chainName} (chainId: ${CONFIG.chainId})`, 'warning');
+      try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: '0x' + CONFIG.chainId.toString(16) }],
+        });
+      } catch (e) {
+        // Try adding the network
+        await window.ethereum.request({
+          method: 'wallet_addEthereumChain',
+          params: [{
+            chainId: '0x' + CONFIG.chainId.toString(16),
+            chainName: CONFIG.chainName,
+            rpcUrls: [CONFIG.rpcUrl],
+          }],
+        });
+      }
+      // Recreate provider after chain switch
+      const p2 = new ethers.BrowserProvider(window.ethereum);
+      const signer = await p2.getSigner();
+      wallet.provider = p2;
+      wallet.signer = signer;
+      wallet.address = await signer.getAddress();
+    } else {
+      const signer = await provider.getSigner();
+      wallet.provider = provider;
+      wallet.signer = signer;
+      wallet.address = await signer.getAddress();
+    }
+
+    escrow = new ethers.Contract(CONFIG.escrowAddress, ESCROW_ABI, wallet.signer);
+    updateWalletUI(true);
+    toast(`钱包已连接: ${shortAddr(wallet.address)}`, 'success');
+
+    // Refresh views
+    await refreshSellerView();
+    loadBuyerOrders();
+    loadArbitratorDisputes();
+  } catch (err) {
+    console.error('Wallet connect error:', err);
+    toast(`连接失败: ${err.message || err}`, 'error');
+  }
+}
+
+function disconnectWallet() {
+  wallet = { address: null, provider: null, signer: null };
+  escrow = null;
+  updateWalletUI(false);
+  toast('钱包已断开', 'info');
+}
+
+function updateWalletUI(connected) {
+  const dot = document.getElementById('walletDot');
+  const addr = document.getElementById('walletAddr');
+  const btnC = document.getElementById('btnConnect');
+  const btnD = document.getElementById('btnDisconnect');
+  const chain = document.getElementById('chainBadge');
+
+  if (connected && wallet.address) {
+    dot.className = 'wallet-dot on';
+    addr.textContent = shortAddr(wallet.address);
+    addr.title = wallet.address;
+    btnC.classList.add('d-none');
+    btnD.classList.remove('d-none');
+    chain.textContent = CONFIG.chainName;
+  } else {
+    dot.className = 'wallet-dot off';
+    addr.textContent = '未连接';
+    addr.title = '';
+    btnC.classList.remove('d-none');
+    btnD.classList.add('d-none');
+    chain.textContent = '—';
+  }
+}
+
+// Listen for account/chain changes
+if (window.ethereum) {
+  window.ethereum.on('accountsChanged', async (accounts) => {
+    if (accounts.length === 0) {
+      disconnectWallet();
+    } else {
+      // CRITICAL: must also update signer + contract, not just address
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      wallet.provider = provider;
+      wallet.signer = signer;
+      wallet.address = await signer.getAddress();
+      escrow = new ethers.Contract(CONFIG.escrowAddress, ESCROW_ABI, wallet.signer);
+      updateWalletUI(true);
+      refreshSellerView();
+      loadBuyerOrders();
+      loadArbitratorDisputes();
+    }
+  });
+  window.ethereum.on('chainChanged', () => location.reload());
+}
+
+// ===========================================================================
+// WHITELIST
+// ===========================================================================
+async function registerWhitelist() {
+  if (!window.ethereum) return toast('请安装 MetaMask', 'error');
+  try {
+    // Re-sync signer from MetaMask to avoid stale state after account switch
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const currentAddr = await signer.getAddress();
+    wallet.provider = provider;
+    wallet.signer = signer;
+    wallet.address = currentAddr;
+    escrow = new ethers.Contract(CONFIG.escrowAddress, ESCROW_ABI, wallet.signer);
+    updateWalletUI(true);
+
+    toast(`正在获取 Merkle Proof (${shortAddr(currentAddr)})...`, 'info');
+    const resp = await apiGet(`/api/whitelist/proof/${currentAddr}`);
+    const proof = resp.proof;
+    toast(`Merkle Proof 获取成功 (${proof.length} 层)，提交注册交易...`, 'info');
+
+    const tx = await escrow.registerWhitelist(proof);
+    toast('交易已广播，等待确认...', 'warning');
+    await tx.wait();
+    toast('白名单注册成功！', 'success');
+    await refreshSellerView();
+  } catch (err) {
+    console.error('Whitelist error:', err);
+    let msg = err.reason || err.message || String(err);
+    // Show address so user can verify they're on the right account
+    const hint = wallet.address ? ` [账户: ${shortAddr(wallet.address)}]` : '';
+    toast(`白名单注册失败: ${msg}${hint}`, 'error');
+  }
+}
+
+// ===========================================================================
+// SELLER OPERATIONS
+// ===========================================================================
+async function createOrder() {
+  if (!wallet.signer) return toast('请先连接钱包', 'warning');
+  const buyer = document.getElementById('buyerSelect').value;
+  const priceEth = document.getElementById('orderPrice').value;
+  const desc = document.getElementById('orderDesc').value || '(无描述)';
+
+  if (!buyer) return toast('请选择买家地址', 'warning');
+  if (!priceEth || parseFloat(priceEth) <= 0) return toast('请输入有效价格', 'warning');
+
+  try {
+    const priceWei = ethers.parseEther(priceEth);
+    const tx = await escrow.createOrder(buyer, priceWei, desc);
+    toast('挂牌交易已广播，等待链上确认...', 'warning');
+    await tx.wait();
+    toast('挂牌成功！订单已上链', 'success');
+    document.getElementById('orderDesc').value = '';
+    document.getElementById('orderPrice').value = '';
+    await refreshSellerView();
+    loadBuyerOrders();
+  } catch (err) {
+    console.error('Create order error:', err);
+    const msg = err.reason || err.message || err;
+    toast(`挂牌失败: ${msg}`, 'error');
+  }
+}
+
+async function shipOrder(orderId) {
+  if (!wallet.signer) return toast('请先连接钱包', 'warning');
+  try {
+    const tx = await escrow.shipOrder(orderId);
+    toast('发货确认中...', 'warning');
+    await tx.wait();
+    toast('已确认发货！等待买家收货', 'success');
+    await refreshSellerView();
+    loadBuyerOrders();
+  } catch (err) {
+    console.error('Ship error:', err);
+    toast(`发货失败: ${err.reason || err.message}`, 'error');
+  }
+}
+
+async function refreshSellerView() {
+  if (!wallet.address) {
+    document.getElementById('sellerWhitelistBox').classList.add('d-none');
+    document.getElementById('sellerWhitelistOk').classList.add('d-none');
+    document.getElementById('btnCreateOrder').disabled = true;
+    populateBuyerSelect();
+    return;
+  }
+
+  // Check whitelist status
+  try {
+    const isWL = await escrow.isWhitelisted(wallet.address);
+    const wlBox = document.getElementById('sellerWhitelistBox');
+    const wlOk = document.getElementById('sellerWhitelistOk');
+    const btn = document.getElementById('btnCreateOrder');
+
+    if (isWL) {
+      wlBox.classList.add('d-none');
+      wlOk.classList.remove('d-none');
+      document.getElementById('sellerWhitelistAddr').textContent = shortAddr(wallet.address);
+      btn.disabled = false;
+    } else {
+      wlBox.classList.remove('d-none');
+      wlOk.classList.add('d-none');
+      btn.disabled = true;
+    }
+  } catch (e) {
+    console.warn('Whitelist check failed, contract may not be deployed:', e.message);
+  }
+
+  populateBuyerSelect();
+  await loadSellerOrders();
+}
+
+function populateBuyerSelect() {
+  const sel = document.getElementById('buyerSelect');
+  sel.innerHTML = '<option value="">— 选择 Hardhat 测试账户 —</option>';
+  HARDHAT_ACCOUNTS.forEach((addr, i) => {
+    const label = wallet.address && addr.toLowerCase() === wallet.address.toLowerCase()
+      ? `Account #${i}: ${addr} (我)` : `Account #${i}: ${addr}`;
+    const disabled = wallet.address && addr.toLowerCase() === wallet.address.toLowerCase();
+    sel.insertAdjacentHTML('beforeend', `<option value="${addr}" ${disabled?'disabled':''}>${label}</option>`);
+  });
+}
+
+async function loadSellerOrders() {
+  const container = document.getElementById('sellerOrderList');
+  if (!wallet.address) {
+    container.innerHTML = '<div class="empty-state w-100"><i class="bi bi-wallet2 d-block"></i>请先连接钱包</div>';
+    return;
+  }
+
+  try {
+    const orders = await apiGet('/api/orders');
+    const mine = orders.filter(o => o.seller.toLowerCase() === wallet.address.toLowerCase());
+    if (mine.length === 0) {
+      container.innerHTML = '<div class="empty-state w-100"><i class="bi bi-inbox d-block"></i>暂无挂牌物品</div>';
+      return;
+    }
+    container.innerHTML = mine.map(o => renderSellerOrderCard(o)).join('');
+  } catch (err) {
+    console.error('Load seller orders error:', err);
+    container.innerHTML = `<div class="empty-state w-100"><i class="bi bi-exclamation-triangle d-block"></i>加载失败: ${err.message}<br><small class="text-muted">请确认 relay 已启动 (python relay/main.py)</small></div>`;
+  }
+}
+
+function renderSellerOrderCard(o) {
+  const stateCls = `state-${o.state}`;
+  const canShip = o.state === 'FUNDED';
+  return `
+    <div class="card">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+          <span class="badge-state ${stateCls}">${STATE_CN[o.state] || o.state}</span>
+          <small class="text-muted">#${o.contract_id}</small>
+        </div>
+        <p class="mb-1 small text-muted">${o.description || '(无描述)'}</p>
+        <div class="d-flex justify-content-between align-items-center mt-2">
+          <strong class="text-success">${weiToEth(o.amount_wei)} ETH</strong>
+          <small class="addr text-muted">买家: ${shortAddr(o.buyer)}</small>
+        </div>
+        ${canShip ? `<button class="btn btn-sm btn-brand w-100 mt-2" onclick="shipOrder(${o.contract_id})"><i class="bi bi-box-seam"></i> 确认发货</button>` : ''}
+        ${o.state === 'SHIPPED' ? `<div class="text-muted small mt-2 text-center"><span class="pulse">⏳ 等待买家确认收货...</span></div>` : ''}
+        ${o.state === 'DISPUTED' ? `<div class="text-danger small mt-2 text-center"><i class="bi bi-shield-exclamation"></i> 纠纷处理中 — 等待仲裁结果</div>` : ''}
+        ${o.state === 'COMPLETED' ? `<div class="text-success small mt-2 text-center"><i class="bi bi-check-circle"></i> 交易完成，资金已到账</div>` : ''}
+      </div>
+    </div>`;
+}
+
+// ===========================================================================
+// BUYER OPERATIONS
+// ===========================================================================
+async function loadBuyerOrders() {
+  const container = document.getElementById('buyerOrderList');
+  container.innerHTML = '<div class="empty-state w-100"><div class="spinner-border text-secondary" role="status"></div><div class="mt-2">加载中...</div></div>';
+
+  try {
+    const filter = document.getElementById('buyerStateFilter').value;
+    const url = filter ? `/api/orders?state=${filter}` : '/api/orders';
+    const orders = await apiGet(url);
+
+    if (orders.length === 0) {
+      container.innerHTML = '<div class="empty-state w-100"><i class="bi bi-inbox d-block"></i>暂无在售物品</div>';
+      return;
+    }
+    container.innerHTML = orders.map(o => renderBuyerOrderCard(o)).join('');
+  } catch (err) {
+    console.error('Load buyer orders error:', err);
+    container.innerHTML = `<div class="empty-state w-100"><i class="bi bi-exclamation-triangle d-block"></i>加载失败<br><small class="text-muted">请确认 relay 已启动</small></div>`;
+  }
+}
+
+function renderBuyerOrderCard(o) {
+  const stateCls = `state-${o.state}`;
+  const isMyOrder = wallet.address && o.buyer.toLowerCase() === wallet.address.toLowerCase();
+  const canFund = o.state === 'CREATED' && isMyOrder;
+  const canReceive = o.state === 'SHIPPED' && isMyOrder;
+  const canDispute = (o.state === 'FUNDED' || o.state === 'SHIPPED') && isMyOrder;
+  const isDisputed = o.state === 'DISPUTED';
+
+  // Build action buttons
+  let actions = '';
+  if (canFund) {
+    actions += `<button class="btn btn-sm btn-success w-100 mb-1" onclick="fundOrder(${o.contract_id}, '${o.amount_wei}')"><i class="bi bi-lock"></i> 购买并锁定资金 (${weiToEth(o.amount_wei)} ETH)</button>`;
+  }
+  if (canReceive) {
+    actions += `
+      <div class="d-flex gap-2 mt-1">
+        <button class="btn btn-sm btn-brand flex-fill" onclick="receiveOrder(${o.contract_id})"><i class="bi bi-hand-thumbs-up"></i> 线下面交无误，释放资金</button>
+        <button class="btn btn-sm btn-outline-danger flex-fill" onclick="showDisputeModal(${o.contract_id})"><i class="bi bi-exclamation-triangle"></i> 货不对板，申请仲裁</button>
+      </div>`;
+  }
+  if (isDisputed && isMyOrder) {
+    actions += `<div class="text-danger small mt-1 text-center pulse"><i class="bi bi-hourglass-split"></i> 纠纷仲裁中...</div>`;
+  }
+
+  const highlight = isMyOrder ? 'border-start: 3px solid var(--accent);' : '';
+
+  return `
+    <div class="card" style="${highlight}">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+          <span class="badge-state ${stateCls}">${STATE_CN[o.state] || o.state}</span>
+          <small class="text-muted">#${o.contract_id}</small>
+        </div>
+        <p class="mb-1 small">${o.description || '(无描述)'}</p>
+        <div class="d-flex justify-content-between align-items-center mt-2 mb-1">
+          <strong class="text-success">${weiToEth(o.amount_wei)} ETH</strong>
+          <small class="addr text-muted">卖家: ${shortAddr(o.seller)}</small>
+        </div>
+        ${isMyOrder ? '<div class="badge bg-light text-primary mb-2">我的订单</div>' : ''}
+        ${o.state === 'COMPLETED' ? '<div class="text-success small text-center"><i class="bi bi-check-circle"></i> 交易完成</div>' : actions}
+      </div>
+    </div>`;
+}
+
+async function fundOrder(orderId, amountWei) {
+  if (!wallet.signer) return toast('请先连接钱包', 'warning');
+  try {
+    const tx = await escrow.fundOrder(orderId, { value: amountWei });
+    toast('资金锁定交易已广播...', 'warning');
+    await tx.wait();
+    toast('购买成功！资金已由合约托管', 'success');
+    loadBuyerOrders();
+  } catch (err) {
+    console.error('Fund error:', err);
+    toast(`付款失败: ${err.reason || err.message}`, 'error');
+  }
+}
+
+async function receiveOrder(orderId) {
+  if (!wallet.signer) return toast('请先连接钱包', 'warning');
+  try {
+    const tx = await escrow.receiveOrder(orderId);
+    toast('确认收货中...', 'warning');
+    await tx.wait();
+    toast('收货确认成功！资金已释放给卖家', 'success');
+    loadBuyerOrders();
+  } catch (err) {
+    console.error('Receive error:', err);
+    toast(`收货确认失败: ${err.reason || err.message}`, 'error');
+  }
+}
+
+async function raiseDisputeFn(orderId, reason) {
+  if (!wallet.signer) return toast('请先连接钱包', 'warning');
+  try {
+    const tx = await escrow.raiseDispute(orderId, reason || '货不对板');
+    toast('仲裁申请已广播...', 'warning');
+    await tx.wait();
+    toast('仲裁申请已提交！等待学校仲裁员投票', 'warning');
+    bootstrap.Modal.getInstance(document.getElementById('disputeModal')).hide();
+    loadBuyerOrders();
+    loadArbitratorDisputes();
+  } catch (err) {
+    console.error('Dispute error:', err);
+    toast(`申请仲裁失败: ${err.reason || err.message}`, 'error');
+  }
+}
+
+function showDisputeModal(orderId) {
+  const modalHtml = `
+    <div class="modal fade" id="disputeModal" tabindex="-1">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header"><h5 class="modal-title">申请仲裁</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+          <div class="modal-body">
+            <p class="small text-muted">订单 #${orderId} — 请描述纠纷原因</p>
+            <textarea class="form-control" id="disputeReason" rows="3" placeholder="例如: 收到的物品与描述不符..."></textarea>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+            <button class="btn btn-danger" onclick="raiseDisputeFn(${orderId}, document.getElementById('disputeReason').value)">提交仲裁</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  // Remove old modal
+  const old = document.getElementById('disputeModal');
+  if (old) old.remove();
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+  new bootstrap.Modal(document.getElementById('disputeModal')).show();
+}
+
+// ===========================================================================
+// ARBITRATOR OPERATIONS
+// ===========================================================================
+async function loadArbitratorDisputes() {
+  const container = document.getElementById('arbitratorDisputeList');
+  container.innerHTML = '<div class="text-center py-3"><div class="spinner-border text-secondary spinner-border-sm" role="status"></div></div>';
+
+  try {
+    // Get all disputes from relay, then cross-reference with on-chain order state
+    const orders = await apiGet('/api/orders');
+    const disputed = orders.filter(o => o.state === 'DISPUTED');
+
+    if (disputed.length === 0) {
+      container.innerHTML = '<div class="empty-state"><i class="bi bi-emoji-smile d-block"></i>暂无纠纷订单 — 校园和谐</div>';
+      return;
+    }
+
+    // For each disputed order, get vote status from chain
+    const cards = [];
+    for (const o of disputed) {
+      let votesHtml = '';
+      try {
+        if (escrow) {
+          const [forBuyer, forSeller, resolved] = await escrow.getDisputeVotes(o.contract_id);
+          const votesForBuyer = Number(forBuyer);
+          const votesForSeller = Number(forSeller);
+          const totalVotes = votesForBuyer + votesForSeller;
+          votesHtml = `
+            <div class="d-flex gap-2 align-items-center mt-2 small">
+              <span class="badge bg-info">支持买家: ${votesForBuyer}/2</span>
+              <span class="badge bg-warning">支持卖家: ${votesForSeller}/2</span>
+              ${resolved ? '<span class="badge bg-success">已裁决</span>' : ''}
+            </div>`;
+        }
+      } catch (e) { /* ignore */ }
+
+      const isArb = wallet.address && escrow ? await escrow.isArbitrator(wallet.address).catch(() => false) : false;
+      const canVote = isArb && o.state === 'DISPUTED';
+      const canExecute = isArb && o.state === 'DISPUTED';
+
+      cards.push(`
+        <div class="card mb-3">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <span class="badge-state state-DISPUTED">纠纷中</span>
+                <strong class="ms-2">订单 #${o.contract_id}</strong>
+              </div>
+              <small class="text-muted">${formatTs(o.updated_at)}</small>
+            </div>
+            <p class="mt-2 mb-1 small">${o.description || '(无描述)'} — ${weiToEth(o.amount_wei)} ETH</p>
+            <div class="addr small text-muted">卖家: ${shortAddr(o.seller)} | 买家: ${shortAddr(o.buyer)}</div>
+            ${votesHtml}
+            ${canVote ? `
+              <div class="d-flex gap-2 mt-2">
+                <button class="btn btn-sm btn-info flex-fill" onclick="voteDispute(${o.contract_id}, true)">
+                  <i class="bi bi-person-check"></i> 支持买家（退款）
+                </button>
+                <button class="btn btn-sm btn-warning flex-fill" onclick="voteDispute(${o.contract_id}, false)">
+                  <i class="bi bi-person-check"></i> 支持卖家（放款）
+                </button>
+              </div>` : ''}
+            ${canExecute ? `
+              <button class="btn btn-sm btn-danger w-100 mt-2" onclick="executeArbitration(${o.contract_id})">
+                <i class="bi bi-gavel"></i> 执行仲裁裁决
+              </button>` : ''}
+            ${!canVote && !canExecute ? '<div class="text-muted small mt-2 text-center">⚠ 当前账户非仲裁员，无法投票</div>' : ''}
+          </div>
+        </div>`);
+    }
+    container.innerHTML = cards.join('');
+  } catch (err) {
+    console.error('Load disputes error:', err);
+    container.innerHTML = `<div class="empty-state"><i class="bi bi-exclamation-triangle d-block"></i>加载失败: ${err.message}</div>`;
+  }
+}
+
+async function voteDispute(orderId, forBuyer) {
+  if (!wallet.signer) return toast('请先连接钱包', 'warning');
+  try {
+    const tx = await escrow.voteOnDispute(orderId, forBuyer);
+    toast('投票已广播...', 'warning');
+    await tx.wait();
+    toast(forBuyer ? '已投票支持买家退款' : '已投票支持卖家收款', 'success');
+    loadArbitratorDisputes();
+  } catch (err) {
+    console.error('Vote error:', err);
+    toast(`投票失败: ${err.reason || err.message}`, 'error');
+  }
+}
+
+async function executeArbitration(orderId) {
+  if (!wallet.signer) return toast('请先连接钱包', 'warning');
+  try {
+    const tx = await escrow.executeArbitration(orderId);
+    toast('执行仲裁中...', 'warning');
+    await tx.wait();
+    toast('仲裁已执行！资金已按投票结果清算', 'success');
+    loadArbitratorDisputes();
+    loadBuyerOrders();
+    refreshSellerView();
+  } catch (err) {
+    console.error('Execute arbitration error:', err);
+    toast(`执行失败: ${err.reason || err.message}`, 'error');
+  }
+}
+
+// ===========================================================================
+// INIT
+// ===========================================================================
+document.addEventListener('DOMContentLoaded', () => {
+  // Populate buyer select even before wallet connect
+  populateBuyerSelect();
+
+  // Auto-connect if MetaMask already authorized
+  if (window.ethereum && window.ethereum.selectedAddress) {
+    connectWallet();
+  }
+
+  // Initial load of buyer view (works without wallet)
+  loadBuyerOrders();
+  loadArbitratorDisputes();
+
+  // Tab change handler for refreshes
+  document.getElementById('tab-seller').addEventListener('shown.bs.tab', refreshSellerView);
+  document.getElementById('tab-buyer').addEventListener('shown.bs.tab', loadBuyerOrders);
+  document.getElementById('tab-arbitrator').addEventListener('shown.bs.tab', loadArbitratorDisputes);
+});
+</script>
+
+</body>
+</html>

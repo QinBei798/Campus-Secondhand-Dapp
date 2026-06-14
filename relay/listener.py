@@ -123,7 +123,7 @@ def run_event_listener(
                         event_obj = getattr(contract.events, event_name, None)
                         if event_obj is None:
                             continue
-                        logs = event_obj.get_logs(fromBlock=from_block, toBlock=to_block)
+                        logs = event_obj.get_logs(from_block=from_block, to_block=to_block)
                         for log in logs:
                             handler(log)
                             events_processed += 1
