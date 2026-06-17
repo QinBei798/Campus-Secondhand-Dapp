@@ -244,12 +244,25 @@ body { background: var(--bg); color: var(--text); font-family: 'Inter', system-u
 // ===========================================================================
 const CONFIG = {
   apiBase: 'http://localhost:8000',
-  escrowAddress: '0x610178dA211FEF7D417bC0e6FeD39F05609AD788',    // CampusEscrow (deployed)
-  whitelistAddress: '0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6', // MerkleWhitelist (deployed)
-  chainId: 31337,          // Hardhat local
+  escrowAddress: null,     // loaded from relay /api/config
+  whitelistAddress: null,  // loaded from relay /api/config
+  chainId: 31337,
   chainName: 'Hardhat Local',
   rpcUrl: 'http://127.0.0.1:8545',
 };
+
+async function loadConfig() {
+  try {
+    const cfg = await fetch(`${CONFIG.apiBase}/api/config`).then(r => r.json());
+    CONFIG.escrowAddress = cfg.campus_escrow;
+    CONFIG.whitelistAddress = cfg.merkle_whitelist;
+    return true;
+  } catch (err) {
+    console.error('Config load failed:', err);
+    toast('无法加载合约配置 — 请确认 relay 已启动 (uvicorn relay.main:app --port 8000)', 'error');
+    return false;
+  }
+}
 
 // Hardhat 默认 10 个 Signers (Account #0 ~ #9)
 const HARDHAT_ACCOUNTS = [
@@ -836,7 +849,11 @@ async function executeArbitration(orderId) {
 // ===========================================================================
 // INIT
 // ===========================================================================
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  // Load contract addresses from relay — must complete before anything else
+  const configOk = await loadConfig();
+  if (!configOk) return;
+
   // Populate buyer select even before wallet connect
   populateBuyerSelect();
 

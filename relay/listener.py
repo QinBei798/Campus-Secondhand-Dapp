@@ -25,6 +25,9 @@ from relay.db import (
 
 logger = logging.getLogger("relay.listener")
 
+# Module-level contract ref so event handlers can query on-chain state
+_escrow_contract = None
+
 
 # ─── Event Handlers ────────────────────────────────────────────
 
@@ -70,12 +73,77 @@ def handle_dispute_voted(event: EventData) -> None:
     args = event.args
     logger.info(f"Dispute {args['disputeId']}: arbitrator {args['arbitrator']} "
                 f"voted {'for buyer' if args['forBuyer'] else 'for seller'}")
+    # Fetch updated vote counts from chain
+    _sync_dispute_votes(args["disputeId"])
 
 
 def handle_dispute_resolved(event: EventData) -> None:
     args = event.args
-    update_dispute_votes(args["disputeId"], 0, 0, resolved=1)
-    logger.info(f"Dispute {args['disputeId']} RESOLVED (refunded={args['refundedBuyer']})")
+    dispute_id = args["disputeId"]
+    logger.info(f"Dispute {dispute_id} RESOLVED (refunded={args['refundedBuyer']})")
+
+    # Resolve disputeId -> orderId, then update both dispute and order state
+    order_id = _get_order_id_for_dispute(dispute_id)
+    if order_id is not None:
+        update_dispute_votes(order_id, 0, 0, resolved=1)
+        upsert_order_partial(contract_id=order_id, state="COMPLETED")
+    else:
+        # Fallback: scan all orders on-chain to find and update the resolved one
+        _refresh_all_disputed_orders()
+
+
+def _get_order_id_for_dispute(dispute_id: int) -> Optional[int]:
+    """Resolve on-chain disputeId -> orderId by scanning orders.
+
+    `disputes` is private in the contract, so we iterate orders() instead.
+    Orders are few (academic project), so O(n) scan is acceptable.
+    """
+    if _escrow_contract is None:
+        return None
+    try:
+        count = _escrow_contract.functions.getOrderCount().call()
+        for i in range(count):
+            o = _escrow_contract.functions.orders(i).call()
+            if o[5] == dispute_id:  # orders[i].disputeId == target
+                return i
+        return None
+    except Exception as e:
+        logger.warning(f"Failed to resolve dispute {dispute_id} -> orderId: {e}")
+        return None
+
+
+def _refresh_all_disputed_orders() -> None:
+    """Check every DISPUTED order on-chain and sync its actual state.
+
+    Used as fallback when we can't map a disputeId -> orderId.
+    """
+    if _escrow_contract is None:
+        return
+    try:
+        count = _escrow_contract.functions.getOrderCount().call()
+        for i in range(count):
+            o = _escrow_contract.functions.orders(i).call()
+            state_map = {0: 'CREATED', 1: 'FUNDED', 2: 'SHIPPED',
+                         3: 'RECEIVED', 4: 'COMPLETED', 5: 'DISPUTED'}
+            state = state_map.get(o[3], 'DISPUTED')
+            # If order was DISPUTED but is now something else, update
+            if state != 'DISPUTED':
+                upsert_order_partial(contract_id=i, state=state,
+                                     dispute_id=o[5])
+    except Exception as e:
+        logger.warning(f"Failed to refresh disputed orders: {e}")
+
+
+def _sync_dispute_votes(dispute_id: int) -> None:
+    """Pull latest vote counts from chain and persist to SQLite."""
+    order_id = _get_order_id_for_dispute(dispute_id)
+    if order_id is None:
+        return
+    try:
+        votes = _escrow_contract.functions.getDisputeVotes(order_id).call()
+        update_dispute_votes(order_id, votes[0], votes[1])
+    except Exception as e:
+        logger.warning(f"Failed to sync votes for dispute {dispute_id}: {e}")
 
 
 EVENT_HANDLERS = {
@@ -103,8 +171,9 @@ def run_event_listener(
     Constraint 2: Every network-facing operation wrapped in try...except.
     On any exception: log, sleep 5s, retry — thread never exits.
     """
+    global _escrow_contract
     contract_addr = Web3.to_checksum_address(contract_address)
-    contract = w3.eth.contract(address=contract_addr, abi=contract_abi)
+    _escrow_contract = w3.eth.contract(address=contract_addr, abi=contract_abi)
     last_block = get_last_synced_block()
 
     logger.info(f"Listener started: block={last_block}, contract={contract_addr}")
@@ -120,7 +189,7 @@ def run_event_listener(
                 events_processed = 0
                 for event_name, handler in EVENT_HANDLERS.items():
                     try:
-                        event_obj = getattr(contract.events, event_name, None)
+                        event_obj = getattr(_escrow_contract.events, event_name, None)
                         if event_obj is None:
                             continue
                         logs = event_obj.get_logs(from_block=from_block, to_block=to_block)

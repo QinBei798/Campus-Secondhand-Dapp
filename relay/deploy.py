@@ -86,6 +86,12 @@ def deploy(hardhat_url: str = "http://127.0.0.1:8545") -> dict:
 
 
 if __name__ == "__main__":
+    # Nuke stale SQLite cache so relay starts fresh on re-deploy
+    db_path = os.path.join(os.path.dirname(__file__), "relay.db")
+    if os.path.exists(db_path):
+        os.remove(db_path)
+        print(f"Cleared stale relay.db")
+
     parser = argparse.ArgumentParser(description="Deploy contracts to Hardhat node")
     parser.add_argument("--hardhat-url", default="http://127.0.0.1:8545",
                         help="Hardhat node RPC URL")

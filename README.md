@@ -276,6 +276,7 @@ campus-secondhand-dapp/
 │   └── index.html                #   单页三合一视图 (Buyer / Seller / Arbiter)
 │
 ├── docs/                         # 设计文档
+├── start.sh                      # 一键启动脚本 (Hardhat + Deploy + Relay + Frontend)
 ├── hardhat.config.js             # Hardhat 本地链配置 (chainId: 31337)
 ├── package.json                  # Node.js 依赖
 └── .gitignore                    # 已隔离 *.db, .venv/, artifacts/, cache/, node_modules/
@@ -293,82 +294,46 @@ campus-secondhand-dapp/
 | Python | ≥3.10 | FastAPI 中继 + 部署脚本 |
 | MetaMask | 任意版本 | 浏览器钱包签名 |
 
-### 第一步：安装依赖
+### 零、安装依赖（仅首次）
 
 ```bash
-# 在项目根目录下执行
-npm install                    # Hardhat + ethers.js + OpenZeppelin
-pip install fastapi uvicorn web3 pydantic   # Python 中继层依赖
-```
-
-### 第二步：编译合约
-
-```bash
+npm install
+pip install fastapi uvicorn web3 pydantic
 npx hardhat compile
 ```
 
-编译产物输出至 `artifacts/` 目录（已由 `.gitignore` 排除）。
-
-### 第三步：启动 Hardhat 本地链
+### 一、一键启动（推荐）
 
 ```bash
-# 打开第一个终端 (保持运行)
+./start.sh
+```
+
+自动完成：启动 Hardhat 节点 → 部署合约 → 启动 API 中继 → 启动前端服务器。
+
+打开 `http://localhost:3000`，在 MetaMask 中切换到 `localhost:8545` (Chain ID: `31337`)，即可开始使用。`Ctrl+C` 一键停止所有服务。
+
+前端合约地址自动从 relay `/api/config` 动态加载，**无需手动修改任何配置**。
+
+### 二、手动启动（分步调试）
+
+```bash
+# 终端 1: 本地链
 npx hardhat node
+
+# 终端 2: 部署合约
+python3 relay/deploy.py
+
+# 终端 2: 启动中继（自动读取 relay/deploy.json 中的合约地址）
+uvicorn relay.main:app --port 8000
+
+# 终端 3: 前端静态服务器
+cd frontend && python3 -m http.server 3000
 ```
 
-控制台输出 20 个预充值 10,000 ETH 的测试账户及其私钥。记录 Account #0 ~ #9 的地址。
-
-### 第四步：部署合约
+### 三、运行测试
 
 ```bash
-# 打开第二个终端
-python relay/deploy.py
-```
-
-脚本自动执行：
-1. 部署 `MerkleWhitelist` 合约
-2. 调用 `scripts/merkle_gen.py` 为前 10 个 Hardhat 账户生成白名单，设置 Merkle Root
-3. 部署 `CampusEscrow` 合约（参数：Whitelist 地址 + Arbitrators [Account #3, #4, #5]）
-4. 输出 `relay/deploy.json`（包含合约地址与 Merkle Root）
-
-### 第五步：启动 FastAPI 中继层
-
-```bash
-# 从 relay/deploy.json 获取 CampusEscrow 地址
-CONTRACT_ADDR=0x... uvicorn relay.main:app --reload --port 8000
-```
-
-FastAPI 启动后自动：
-- 初始化 SQLite 数据库（`relay/relay.db`）
-- 启动后台事件监听器守护线程，增量同步链上事件到 SQLite
-- 开启 REST API 端点（`/api/orders`, `/api/disputes`, `/api/whitelist/proof/{address}`）
-
-验证 API 可用：
-
-```bash
-curl http://localhost:8000/health
-# → {"status":"ok"}
-
-curl http://localhost:8000/api/orders
-# → []
-```
-
-### 第六步：打开前端控制台
-
-直接用浏览器打开 `frontend/index.html`（无需 Web Server，纯静态文件）。
-
-操作步骤：
-1. 打开 MetaMask → 添加网络 `http://127.0.0.1:8545` (Chain ID: `31337`)
-2. 导入 Hardhat 测试账户私钥（从 `npx hardhat node` 输出中复制）
-3. 刷新页面 → 右上角显示 🟢 已连接
-4. 切换 Tab 体验买家 / 卖家 / 仲裁人三种角色
-
-### 第七步：运行全量测试
-
-```bash
-# 智能合约测试 (Hardhat)
 npx hardhat test
-
 # 预期输出: 22 passing (MerkleWhitelist x5, CampusEscrow x17)
 ```
 

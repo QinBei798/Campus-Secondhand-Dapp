@@ -4,6 +4,7 @@ FastAPI off-chain relay — REST API + optional background event listener.
 Constraint 3: Merkle proof lookup imports scripts/merkle_gen.py as a Python
 module (via sys.path). ZERO subprocess calls — function invocation only.
 """
+import json
 import os
 import sys
 import logging
@@ -56,28 +57,55 @@ def _get_whitelist() -> dict:
     return _WHITELIST_CACHE
 
 
+# ─── Config loader ────────────────────────────────────────────────
+
+def _load_deploy_config() -> dict:
+    deploy_path = os.path.join(os.path.dirname(__file__), "deploy.json")
+    if os.path.exists(deploy_path):
+        with open(deploy_path) as f:
+            return json.load(f)
+    return {}
+
+
 # ─── Lifespan ──────────────────────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
+    from web3 import Web3
+    import sqlite3
 
-    contract_addr = os.environ.get("CONTRACT_ADDR", "")
+    hardhat_url = os.environ.get("HARDHAT_URL", "http://127.0.0.1:8545")
+    deploy_cfg = _load_deploy_config()
+    w3 = Web3(Web3.HTTPProvider(hardhat_url))
+
+    # Auto-detect chain reset: if last synced block > current chain block, clear stale cache
+    init_db()
+    if w3.is_connected():
+        from relay.db import get_last_synced_block
+        last_synced = get_last_synced_block()
+        current_block = w3.eth.block_number
+        if last_synced > current_block:
+            logger.warning(f"Chain reset detected (DB={last_synced}, chain={current_block}). "
+                           f"Purging stale cache.")
+            db_path = os.path.join(os.path.dirname(__file__), "relay.db")
+            conn = sqlite3.connect(db_path)
+            conn.execute("DELETE FROM orders")
+            conn.execute("DELETE FROM disputes")
+            conn.execute("DELETE FROM meta")
+            conn.commit()
+            conn.close()
+            init_db()
+
+    contract_addr = os.environ.get("CONTRACT_ADDR", deploy_cfg.get("campus_escrow", ""))
 
     if contract_addr:
-        from web3 import Web3
         from relay.listener import run_event_listener
 
-        hardhat_url = os.environ.get("HARDHAT_URL", "http://127.0.0.1:8545")
-        w3 = Web3(Web3.HTTPProvider(hardhat_url))
-
         if w3.is_connected():
-            # Load ABI from Hardhat artifacts
             _artifacts = os.path.join(
                 os.path.dirname(os.path.dirname(__file__)),
                 "artifacts", "contracts", "CampusEscrow.sol", "CampusEscrow.json",
             )
-            import json
             with open(_artifacts) as f:
                 escrow_artifact = json.load(f)
 
@@ -116,6 +144,15 @@ app.add_middleware(
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/api/config")
+async def get_config():
+    """Return deploy.json contents so frontend doesn't hardcode addresses."""
+    cfg = _load_deploy_config()
+    if not cfg:
+        raise HTTPException(status_code=503, detail="Not deployed — run relay/deploy.py first")
+    return cfg
 
 
 # ─── Orders ────────────────────────────────────────────────────
