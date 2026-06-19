@@ -69,18 +69,35 @@ def _load_deploy_config() -> dict:
 
 # ─── Lifespan ──────────────────────────────────────────────────
 
+RPC_ENDPOINTS = [
+    "http://127.0.0.1:8545",  # Node A
+    "http://127.0.0.1:8547",  # Node B
+    "http://127.0.0.1:8549"   # Node C
+]
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from web3 import Web3
+    from web3.middleware import ExtraDataToPOAMiddleware
     import sqlite3
 
-    hardhat_url = os.environ.get("HARDHAT_URL", "http://127.0.0.1:8545")
+    # Find first working RPC for startup check
+    w3 = None
+    for url in RPC_ENDPOINTS:
+        try:
+            temp_w3 = Web3(Web3.HTTPProvider(url))
+            temp_w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+            if temp_w3.is_connected():
+                w3 = temp_w3
+                break
+        except Exception:
+            pass
+
     deploy_cfg = _load_deploy_config()
-    w3 = Web3(Web3.HTTPProvider(hardhat_url))
 
     # Auto-detect chain reset: if last synced block > current chain block, clear stale cache
     init_db()
-    if w3.is_connected():
+    if w3 and w3.is_connected():
         from relay.db import get_last_synced_block
         last_synced = get_last_synced_block()
         current_block = w3.eth.block_number
@@ -91,7 +108,7 @@ async def lifespan(app: FastAPI):
             conn = sqlite3.connect(db_path)
             conn.execute("DELETE FROM orders")
             conn.execute("DELETE FROM disputes")
-            conn.execute("DELETE FROM meta")
+            conn.execute("DELETE FROM sync_state")  # Fixed typo (meta -> sync_state)
             conn.commit()
             conn.close()
             init_db()
@@ -101,24 +118,21 @@ async def lifespan(app: FastAPI):
     if contract_addr:
         from relay.listener import run_event_listener
 
-        if w3.is_connected():
-            _artifacts = os.path.join(
-                os.path.dirname(os.path.dirname(__file__)),
-                "artifacts", "contracts", "CampusEscrow.sol", "CampusEscrow.json",
-            )
-            with open(_artifacts) as f:
-                escrow_artifact = json.load(f)
+        _artifacts = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "artifacts", "contracts", "CampusEscrow.sol", "CampusEscrow.json",
+        )
+        with open(_artifacts) as f:
+            escrow_artifact = json.load(f)
 
-            t = threading.Thread(
-                target=run_event_listener,
-                args=(w3, escrow_artifact["abi"], contract_addr),
-                daemon=True,
-                name="event-listener",
-            )
-            t.start()
-            logger.info(f"Event listener started for {contract_addr}")
-        else:
-            logger.warning(f"Hardhat node unreachable at {hardhat_url}")
+        t = threading.Thread(
+            target=run_event_listener,
+            args=(RPC_ENDPOINTS, escrow_artifact["abi"], contract_addr),
+            daemon=True,
+            name="event-listener",
+        )
+        t.start()
+        logger.info(f"Event listener started for {contract_addr}")
 
     yield
     logger.info("Relay shutdown complete")

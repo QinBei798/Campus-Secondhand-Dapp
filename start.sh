@@ -4,29 +4,30 @@ set -e
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 HARDHAT_URL="http://127.0.0.1:8545"
 RELAY_PORT=8000
-FRONTEND_PORT=3000
+FRONTEND_PORT=8080
 
 cleanup() {
   echo ""
-  echo "Shutting down..."
-  kill $NODE_PID $RELAY_PID $FRONTEND_PID 2>/dev/null
-  wait $NODE_PID $RELAY_PID $FRONTEND_PID 2>/dev/null
+  echo "Shutting down services..."
+  kill $RELAY_PID $FRONTEND_PID 2>/dev/null
+  wait $RELAY_PID $FRONTEND_PID 2>/dev/null
+  echo "Stopping Geth consortium network..."
+  docker compose down 2>/dev/null
   echo "All services stopped."
 }
 trap cleanup EXIT INT TERM
 
 echo "============================================"
-echo "  Campus Secondhand DApp — 一键启动"
+echo "  Campus Secondhand DApp — 一键启动 (联盟链版)"
 echo "============================================"
 
-# ─── 1. Hardhat Node ───────────────────────────────────────────
+# ─── 1. Geth Consortium Network ───────────────────────────────
 echo ""
-echo "[1/3] Starting Hardhat node (port 8545)..."
-npx hardhat node > /tmp/hardhat-node.log 2>&1 &
-NODE_PID=$!
+echo "[1/3] Starting Geth multi-node consortium network..."
+docker compose up -d
 
 # Wait until RPC is ready
-echo -n "      Waiting for RPC"
+echo -n "      Waiting for Geth RPC"
 for i in $(seq 1 30); do
   if curl -s -X POST -H "Content-Type: application/json" \
        -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
@@ -37,6 +38,7 @@ for i in $(seq 1 30); do
   echo -n "."
   sleep 1
 done
+sleep 3
 
 # ─── 2. Deploy contracts ───────────────────────────────────────
 echo ""
@@ -60,17 +62,20 @@ FRONTEND_PID=$!
 
 echo ""
 echo "============================================"
-echo "  All services running!"
+echo "  All Geth consortium services running!"
 echo ""
-echo "  Hardhat Node : $HARDHAT_URL"
-echo "  Relay API    : http://localhost:$RELAY_PORT"
-echo "  Frontend     : http://localhost:$FRONTEND_PORT"
+echo "  Node A RPC RPC : http://127.0.0.1:8545"
+echo "  Node B RPC RPC : http://127.0.0.1:8547"
+echo "  Node C RPC RPC : http://127.0.0.1:8549"
+echo "  Relay API      : http://localhost:$RELAY_PORT"
+echo "  Frontend       : http://localhost:$FRONTEND_PORT"
 echo ""
-echo "  API docs     : http://localhost:$RELAY_PORT/docs"
-echo "  Health check : http://localhost:$RELAY_PORT/health"
+echo "  API docs       : http://localhost:$RELAY_PORT/docs"
+echo "  Health check   : http://localhost:$RELAY_PORT/health"
 echo "============================================"
 echo ""
 echo "Press Ctrl+C to stop all services."
 
 # Wait for any process to exit
 wait
+

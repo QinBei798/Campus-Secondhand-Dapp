@@ -310,7 +310,7 @@ npx hardhat compile
 
 自动完成：启动 Hardhat 节点 → 部署合约 → 启动 API 中继 → 启动前端服务器。
 
-打开 `http://localhost:3000`，在 MetaMask 中切换到 `localhost:8545` (Chain ID: `31337`)，即可开始使用。`Ctrl+C` 一键停止所有服务。
+打开 `http://localhost:8080`，在 MetaMask 中切换到 `localhost:8545` (Chain ID: `31337`)，即可开始使用。`Ctrl+C` 一键停止所有服务。
 
 前端合约地址自动从 relay `/api/config` 动态加载，**无需手动修改任何配置**。
 
@@ -327,7 +327,7 @@ python3 relay/deploy.py
 uvicorn relay.main:app --port 8000
 
 # 终端 3: 前端静态服务器
-cd frontend && python3 -m http.server 3000
+cd frontend && python3 -m http.server 8080
 ```
 
 ### 三、运行测试

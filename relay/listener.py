@@ -1,18 +1,20 @@
 """
-Background event listener — polls Hardhat node via web3.py, incrementally
+Background event listener — polls Geth nodes via web3.py, incrementally
 syncs CampusEscrow on-chain events to SQLite.
 
 Constraint 2: Daemon thread MUST NEVER CRASH. Every get_logs / event-processing
 call is wrapped in try...except. On failure: log the error, sleep 5 seconds,
-and continue the loop. The listener is designed to survive Hardhat node
+and continue the loop. The listener is designed to survive Geth node
 restarts, network blips, and malformed event data.
+Additionally, this listener supports RPC Failover (automatic failover to B/C if A is down).
 """
 import time
 import logging
-from typing import Optional
+from typing import Optional, List
 
 from web3 import Web3
 from web3.types import EventData
+from web3.middleware import ExtraDataToPOAMiddleware
 
 from relay.db import (
     upsert_order,
@@ -82,8 +84,26 @@ def handle_dispute_resolved(event: EventData) -> None:
     dispute_id = args["disputeId"]
     logger.info(f"Dispute {dispute_id} RESOLVED (refunded={args['refundedBuyer']})")
 
-    # Resolve disputeId -> orderId, then update both dispute and order state
-    order_id = _get_order_id_for_dispute(dispute_id)
+    # Resolve disputeId -> orderId by decoding transaction input of executeArbitration
+    # This completely solves the on-chain disputeId = 0 collision bug
+    order_id = None
+    try:
+        if _escrow_contract is not None:
+            tx_hash = event.transactionHash
+            tx = _escrow_contract.w3.eth.get_transaction(tx_hash)
+            tx_input = tx.input.hex() if isinstance(tx.input, bytes) else tx.input
+            # executeArbitration(uint256 orderId)
+            # The method selector is 4 bytes (8 hex chars + 2 for "0x" = 10 chars)
+            # The orderId is uint256 (32 bytes = 64 hex chars)
+            order_id = int(tx_input[10:74], 16)
+            logger.info(f"Successfully decoded resolved orderId={order_id} from transaction {tx_hash.hex()}")
+    except Exception as e:
+        logger.warning(f"Failed to decode orderId from transaction: {e}")
+
+    # Fallback to scanning if decoding failed
+    if order_id is None:
+        order_id = _get_order_id_for_dispute(dispute_id)
+
     if order_id is not None:
         update_dispute_votes(order_id, 0, 0, resolved=1)
         upsert_order_partial(contract_id=order_id, state="COMPLETED")
@@ -93,11 +113,7 @@ def handle_dispute_resolved(event: EventData) -> None:
 
 
 def _get_order_id_for_dispute(dispute_id: int) -> Optional[int]:
-    """Resolve on-chain disputeId -> orderId by scanning orders.
-
-    `disputes` is private in the contract, so we iterate orders() instead.
-    Orders are few (academic project), so O(n) scan is acceptable.
-    """
+    """Resolve on-chain disputeId -> orderId by scanning orders."""
     if _escrow_contract is None:
         return None
     try:
@@ -113,10 +129,7 @@ def _get_order_id_for_dispute(dispute_id: int) -> Optional[int]:
 
 
 def _refresh_all_disputed_orders() -> None:
-    """Check every DISPUTED order on-chain and sync its actual state.
-
-    Used as fallback when we can't map a disputeId -> orderId.
-    """
+    """Check every DISPUTED order on-chain and sync its actual state."""
     if _escrow_contract is None:
         return
     try:
@@ -160,7 +173,7 @@ EVENT_HANDLERS = {
 # ─── Listener Loop ─────────────────────────────────────────────
 
 def run_event_listener(
-    w3: Web3,
+    rpc_urls: List[str],
     contract_abi: list,
     contract_address: str,
     poll_interval: float = 2.0,
@@ -169,17 +182,46 @@ def run_event_listener(
     Background daemon thread entry point.
 
     Constraint 2: Every network-facing operation wrapped in try...except.
-    On any exception: log, sleep 5s, retry — thread never exits.
+    On any exception: log, sleep 5s, retry/failover — thread never exits.
     """
     global _escrow_contract
     contract_addr = Web3.to_checksum_address(contract_address)
-    _escrow_contract = w3.eth.contract(address=contract_addr, abi=contract_abi)
+    
+    current_rpc_idx = 0
+    w3 = None
     last_block = get_last_synced_block()
 
-    logger.info(f"Listener started: block={last_block}, contract={contract_addr}")
+    logger.info(f"Listener started: initial_block={last_block}, contract={contract_addr}")
+
+    def connect_next_rpc() -> bool:
+        nonlocal current_rpc_idx, w3
+        for _ in range(len(rpc_urls)):
+            url = rpc_urls[current_rpc_idx]
+            try:
+                temp_w3 = Web3(Web3.HTTPProvider(url))
+                temp_w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+                if temp_w3.is_connected():
+                    w3 = temp_w3
+                    logger.info(f"Successfully connected to RPC node: {url}")
+                    return True
+            except Exception as e:
+                logger.warning(f"Failed to connect to RPC node {url}: {e}")
+            current_rpc_idx = (current_rpc_idx + 1) % len(rpc_urls)
+        return False
 
     while True:
         try:
+            # Reconnect/Failover if connection is lost
+            if w3 is None or not w3.is_connected():
+                logger.warning("No active RPC connection or connection lost. Attempting failover...")
+                if not connect_next_rpc():
+                    logger.error("All RPC nodes are down! Cooldown 5s...")
+                    time.sleep(5)
+                    continue
+                _escrow_contract = w3.eth.contract(address=contract_addr, abi=contract_abi)
+                # Re-sync last_block in case DB changed
+                last_block = get_last_synced_block()
+
             current_block = w3.eth.block_number
 
             if current_block > last_block:
@@ -209,6 +251,7 @@ def run_event_listener(
             time.sleep(poll_interval)
 
         except Exception as e:
-            # Constraint 2: catch-all, log, cooldown, retry
-            logger.error(f"Listener error (will retry in 5s): {e}", exc_info=True)
+            # Cooldown, log, set w3 to None to trigger failover on next loop
+            logger.error(f"Listener error (will retry/failover in 5s): {e}", exc_info=True)
+            w3 = None
             time.sleep(5)

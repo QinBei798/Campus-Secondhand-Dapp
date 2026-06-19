@@ -28,6 +28,12 @@ env/
 .env.local
 .env.*.local
 
+# Private Network — sensitive keys & blockchain data
+private-network/password.txt
+private-network/bootnode/
+private-network/*/keystore/
+private-network/*/geth/
+
 # Operating System
 .DS_Store
 Thumbs.db

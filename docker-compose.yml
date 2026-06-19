@@ -1,0 +1,62 @@
+version: '3.8'
+
+networks:
+  geth-net:
+    driver: bridge
+
+services:
+  bootnode:
+    image: ethereum/client-go:alltools-v1.13.15
+    container_name: geth-bootnode
+    command: bootnode -nodekey /data/bootnode/boot.key -addr :30301
+    volumes:
+      - ./private-network:/data
+    ports:
+      - "30301:30301/udp"
+    networks:
+      - geth-net
+
+  nodeA:
+    image: ethereum/client-go:alltools-v1.13.15
+    container_name: geth-nodeA
+    depends_on:
+      - bootnode
+    entrypoint: /bin/sh -c "if [ ! -d /data/nodeA/geth/chaindata ]; then geth init --datadir /data/nodeA /data/genesis.json; fi && geth --datadir /data/nodeA --networkid 12345 --http --http.addr 0.0.0.0 --http.port 8545 --http.api eth,net,web3,clique,personal,admin --http.corsdomain '*' --http.vhosts '*' --ws --ws.addr 0.0.0.0 --ws.port 8546 --ws.api eth,net,web3,clique,personal,admin --ws.origins '*' --bootnodes enode://33355264da11cf3bd4fd7b0728462ae3b90b5c6a5809d7ca17b5066d62bbc637b58673e237c8f04611221f46bc1db8227f6c7db68687cfddb08e01cc9bd62bca@bootnode:30301 --mine --miner.etherbase 0x347494f66e8093f7cffcc8519db75640a28dcaef --unlock 0x347494f66e8093f7cffcc8519db75640a28dcaef --password /data/password.txt --allow-insecure-unlock"
+    volumes:
+      - ./private-network:/data
+    ports:
+      - "8545:8545"
+      - "8546:8546"
+      - "30303:30303"
+    networks:
+      - geth-net
+
+  nodeB:
+    image: ethereum/client-go:alltools-v1.13.15
+    container_name: geth-nodeB
+    depends_on:
+      - bootnode
+    entrypoint: /bin/sh -c "if [ ! -d /data/nodeB/geth/chaindata ]; then geth init --datadir /data/nodeB /data/genesis.json; fi && geth --datadir /data/nodeB --networkid 12345 --http --http.addr 0.0.0.0 --http.port 8545 --http.api eth,net,web3,clique,personal,admin --http.corsdomain '*' --http.vhosts '*' --ws --ws.addr 0.0.0.0 --ws.port 8546 --ws.api eth,net,web3,clique,personal,admin --ws.origins '*' --bootnodes enode://33355264da11cf3bd4fd7b0728462ae3b90b5c6a5809d7ca17b5066d62bbc637b58673e237c8f04611221f46bc1db8227f6c7db68687cfddb08e01cc9bd62bca@bootnode:30301 --mine --miner.etherbase 0x29a1e3c84bbcb19fd5afb0b6c421bdb28c918304 --unlock 0x29a1e3c84bbcb19fd5afb0b6c421bdb28c918304 --password /data/password.txt --allow-insecure-unlock"
+    volumes:
+      - ./private-network:/data
+    ports:
+      - "8547:8545"
+      - "8548:8546"
+      - "30304:30303"
+    networks:
+      - geth-net
+
+  nodeC:
+    image: ethereum/client-go:alltools-v1.13.15
+    container_name: geth-nodeC
+    depends_on:
+      - bootnode
+    entrypoint: /bin/sh -c "if [ ! -d /data/nodeC/geth/chaindata ]; then geth init --datadir /data/nodeC /data/genesis.json; fi && geth --datadir /data/nodeC --networkid 12345 --http --http.addr 0.0.0.0 --http.port 8545 --http.api eth,net,web3,clique,personal,admin --http.corsdomain '*' --http.vhosts '*' --ws --ws.addr 0.0.0.0 --ws.port 8546 --ws.api eth,net,web3,clique,personal,admin --ws.origins '*' --bootnodes enode://33355264da11cf3bd4fd7b0728462ae3b90b5c6a5809d7ca17b5066d62bbc637b58673e237c8f04611221f46bc1db8227f6c7db68687cfddb08e01cc9bd62bca@bootnode:30301 --mine --miner.etherbase 0x7a20e97c14e215ad7188ac412cb638f252773637 --unlock 0x7a20e97c14e215ad7188ac412cb638f252773637 --password /data/password.txt --allow-insecure-unlock"
+    volumes:
+      - ./private-network:/data
+    ports:
+      - "8549:8545"
+      - "8550:8546"
+      - "30305:30303"
+    networks:
+      - geth-net

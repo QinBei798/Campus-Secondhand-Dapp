@@ -246,8 +246,8 @@ const CONFIG = {
   apiBase: 'http://localhost:8000',
   escrowAddress: null,     // loaded from relay /api/config
   whitelistAddress: null,  // loaded from relay /api/config
-  chainId: 31337,
-  chainName: 'Hardhat Local',
+  chainId: 12345,
+  chainName: 'Geth Consortium Network',
   rpcUrl: 'http://127.0.0.1:8545',
 };
 
@@ -352,6 +352,11 @@ async function connectWallet() {
             chainId: '0x' + CONFIG.chainId.toString(16),
             chainName: CONFIG.chainName,
             rpcUrls: [CONFIG.rpcUrl],
+            nativeCurrency: {
+              name: 'ETH',
+              symbol: 'ETH',
+              decimals: 18
+            }
           }],
         });
       }
