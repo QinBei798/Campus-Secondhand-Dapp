@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/ethers.js-v6-2535a0?logo=ethers&logoColor=white" alt="ethers.js v6">
   <img src="https://img.shields.io/badge/SQLite-3.x-003b57?logo=sqlite&logoColor=white" alt="SQLite">
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
-  <img src="https://img.shields.io/badge/TDD-25%2F25%20PASS-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/TDD-47%2F47%20PASS-brightgreen" alt="Tests">
 </p>
 
 <h1 align="center">
@@ -405,37 +405,64 @@ python3 scripts/monitor.py
 
 ## 🧪 测试矩阵
 
-### 合约层 (Hardhat + Chai + ethers.js v6)
+### 合约层 — Solidity 智能合约 (Hardhat + Chai + ethers.js v6)
 
 | 套件 | 编号 | 测试用例 | 覆盖维度 |
 |------|------|----------|----------|
 | **Suite A** | A.1 | Valid Merkle proof → returns true | 密码学验证 |
 | MerkleWhitelist | A.2 | Forged proof → revert "Invalid proof" | 防伪造 |
-| (5 tests) | A.3 | Double-use same leaf → revert | 防重放 |
-| | A.4 | Address not in tree → revert | 防非成员 |
-| | A.5 | Mismatched nonce → revert | 防过期身份 |
-| **Suite B** | B.1.1 | Full lifecycle CREATED→COMPLETED | 正向流程 |
+| (5 tests) | A.3 | Double-use same leaf → revert "Already used" | 防重放 |
+| | A.4 | Address not in tree → revert "Invalid proof" | 防非成员 |
+| | A.5 | Mismatched nonce → revert "Invalid proof" | 防过期身份 |
+| **Suite B** | B.1.1 | Full lifecycle CREATED→FUNDED→SHIPPED→COMPLETED | 正向流程 |
 | CampusEscrow | B.1.2 | Funds transferred to seller on completion | 资金清算 |
-| (17 tests) | B.2.1 | Buyer raises dispute from FUNDED | 争议入口 |
-| | B.2.2 | State = DISPUTED after dispute | 状态变更 |
-| | B.2.3 | 2/3 vote refunds buyer | 多签裁决 |
+| (12 tests) | B.2.1 | Buyer raises dispute from FUNDED (emit OrderDisputed) | 争议入口 |
+| | B.2.2 | State = DISPUTED after dispute raised | 状态变更 |
+| | B.2.3 | 2/3 vote for buyer → refund buyer | 多签裁决 |
 | | B.3.1 | Non-buyer fund → revert "Only buyer" | 权限拦截 |
 | | B.3.2 | Non-seller ship → revert "Only seller" | 权限拦截 |
-| | B.3.3 | Non-buyer receive → revert "Only buyer" | 权限拦截 |
-| | B.3.4 | Non-arbitrator vote → revert | 角色隔离 |
-| | B.3.5 | Wrong state transition → revert | 状态机防护 |
-| | B.4.1 | Non-whitelisted seller → revert | 白名单集成 |
+| | B.3.3 | Non-buyer confirm receipt → revert "Only buyer" | 权限拦截 |
+| | B.3.4 | Non-arbitrator vote → revert "Only arbitrator" | 角色隔离 |
+| | B.3.5 | Wrong state transition → revert "Invalid state" | 状态机防护 |
+| | B.4.1 | Non-whitelisted seller createOrder → revert | 白名单集成 |
 | | B.4.2 | Hacker fund → revert "Only buyer" | 身份伪造防御 |
+| **合计** | **17** | — | — |
 
-### 中继层 (Python pytest)
+### 中继层 — Python pytest (30 tests)
 
-| 测试 | 覆盖 |
-|------|------|
-| 数据库 CRUD 操作 | `init_db`, `upsert_order`, `get_orders`, `get_order` |
-| 交易历史记录 | `insert_tx_history`, `get_tx_history_by_order`, 去重防护 |
-| 争议 API | `create_dispute`, `get_disputes` |
-| Merkle Proof 签发 | `generate_whitelist`, `verify_proof` 自检 |
-| 链上交易查询 | `GET /api/tx/{tx_hash}` 实时 RPC 查询 |
+| 套件 | 测试函数 | 覆盖 |
+|------|----------|------|
+| **Suite C** | `test_init_db_creates_tables` | 数据库建表 |
+| 数据库层 | `test_sync_state_defaults_to_zero` | 同步状态初始化 |
+| (11 tests) | `test_update_sync_block` | 区块高度更新 |
+| | `test_upsert_order_insert` | 订单插入 |
+| | `test_upsert_order_update_state` | 订单状态更新 |
+| | `test_upsert_order_partial_preserves_existing_columns` | 局部更新保护 |
+| | `test_get_orders_filter_by_state` | 按状态过滤查询 |
+| | `test_get_order_by_id_found_and_not_found` | 按 ID 查询 + 404 |
+| | `test_upsert_dispute_creates_record` | 争议记录创建 |
+| | `test_update_dispute_votes_set_resolved` | 争议投票 + 结案 |
+| | `test_create_dispute_standalone` | 独立争议创建 |
+| | `test_order_tx_history_operations` | 交易历史 CRUD + 去重 |
+| **Suite D** | `test_parse_order_created_event` | 事件解析: CREATED |
+| 事件监听器 | `test_parse_order_funded_event` | 事件解析: FUNDED |
+| (5 tests) | `test_parse_order_shipped_event` | 事件解析: SHIPPED |
+| | `test_parse_order_received_event` | 事件解析: COMPLETED |
+| | `test_parse_order_disputed_event` | 事件解析: DISPUTED |
+| **Suite E** | `test_health_check` | GET /health |
+| API 端点 | `test_get_orders_empty` | GET /api/orders 空列表 |
+| (14 tests) | `test_get_orders_with_data` | GET /api/orders 含数据 |
+| | `test_get_orders_filter_state` | GET /api/orders?state=FUNDED |
+| | `test_get_order_by_contract_id` | GET /api/orders/{id} |
+| | `test_get_order_not_found` | GET /api/orders/{id} 404 |
+| | `test_get_disputes_empty` | GET /api/disputes 空列表 |
+| | `test_get_disputes_with_data` | GET /api/disputes 含数据 |
+| | `test_post_dispute_creates_record` | POST /api/disputes |
+| | `test_get_whitelist_proof_known_address` | GET /api/whitelist/proof/{addr} |
+| | `test_get_whitelist_proof_unknown_address` | GET /api/whitelist/proof/{addr} 404 |
+| | `test_get_order_includes_history` | 订单返回嵌套交易历史 |
+| | `test_get_tx_details_mock` | GET /api/tx/{hash} 链上查询 |
+| **合计** | **30** | — |
 
 ---
 
