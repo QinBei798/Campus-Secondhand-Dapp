@@ -1,12 +1,13 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Solidity-0.8.20-363636?logo=solidity&logoColor=white" alt="Solidity">
-  <img src="https://img.shields.io/badge/Hardhat-2.28-fff100?logo=hardhat&logoColor=black" alt="Hardhat">
+  <img src="https://img.shields.io/badge/Geth-1.13%2B-4db33d?logo=ethereum&logoColor=white" alt="Geth">
+  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" alt="Docker">
   <img src="https://img.shields.io/badge/Python-FastAPI-009688?logo=fastapi&logoColor=white" alt="FastAPI">
   <img src="https://img.shields.io/badge/Web3.py-6.x-bc4b38?logo=python&logoColor=white" alt="Web3.py">
   <img src="https://img.shields.io/badge/ethers.js-v6-2535a0?logo=ethers&logoColor=white" alt="ethers.js v6">
   <img src="https://img.shields.io/badge/SQLite-3.x-003b57?logo=sqlite&logoColor=white" alt="SQLite">
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
-  <img src="https://img.shields.io/badge/TDD-22%2F22%20PASS-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/TDD-25%2F25%20PASS-brightgreen" alt="Tests">
 </p>
 
 <h1 align="center">
@@ -25,7 +26,8 @@
 - [🔐 合约核心状态机流转](#-合约核心状态机流转)
 - [📂 项目文件结构](#-项目文件结构)
 - [🚀 极速本地跑通与联调指南](#-极速本地跑通与联调指南)
-- [🎬 2 分钟期末答辩 Live Demo 黄金脚本](#-2-分钟期末答辩-live-demo-黄金脚本)
+- [🔍 链上交易溯源与区块链浏览器](#-链上交易溯源与区块链浏览器)
+- [🖥️ 联盟链实时监控面板](#️-联盟链实时监控面板)
 - [🧪 测试矩阵](#-测试矩阵)
 - [📚 学术创新点与密码学代码复用](#-学术创新点与密码学代码复用)
 - [🔒 安全设计](#-安全设计)
@@ -118,7 +120,7 @@
                   │               │       │       │               │
                   │               ▼       ▼       ▼               │
                   │   ┌──────────────────────────────────┐        │
-                  │   │     Hardhat Local EVM Node        │        │
+                  │   │  Geth PoA Consortium Network     │        │
                   │   │  ┌──────────┐  ┌──────────────┐  │        │
                   │   │  │Merkle    │  │  CampusEscrow │  │        │
                   │   │  │Whitelist │◄─┤  (FSM Engine) │  │        │
@@ -259,15 +261,18 @@ campus-secondhand-dapp/
 │   └── CampusEscrow.sol          #   担保托管 + 2/3 多签仲裁引擎
 │
 ├── scripts/                      # Python 工具链
-│   └── merkle_gen.py             #   Merkle 树生成器 (算法移植自 Merkle.cpp)
+│   ├── merkle_gen.py             #   Merkle 树生成器 (算法移植自 Merkle.cpp)
+│   ├── monitor.py                #   联盟链实时监控可视化面板
+│   └── decrypt_keystores.py      #   Keystore 私钥提取工具
 │
 ├── relay/                        # 链下中继层 (Python FastAPI)
 │   ├── main.py                   #   REST API 服务入口 + 端点定义
-│   ├── listener.py               #   事件监听器守护线程 (增量同步)
-│   ├── db.py                     #   SQLite 数据库层 (WAL 模式)
+│   ├── listener.py               #   事件监听器守护线程 (增量同步 + RPC 故障转移)
+│   ├── db.py                     #   SQLite 数据库层 (WAL 模式 + 交易历史)
 │   ├── models.py                 #   Pydantic 请求/响应模型
 │   ├── deploy.py                 #   自动化合约部署脚本
-│   └── deploy.json               #   部署输出 (合约地址 + Merkle Root)
+│   ├── deploy.json               #   部署输出 (合约地址 + Merkle Root)
+│   └── test_relay.py             #   中继层测试套件
 │
 ├── test/                         # 智能合约测试套件 (Hardhat + Chai)
 │   └── CampusEscrow.test.js      #   22 条 TDD 测试 (A.1-A.5, B.1-B.4)
@@ -275,11 +280,13 @@ campus-secondhand-dapp/
 ├── frontend/                     # 前端 H5 控制台
 │   └── index.html                #   单页三合一视图 (Buyer / Seller / Arbiter)
 │
-├── docs/                         # 设计文档
-├── start.sh                      # 一键启动脚本 (Hardhat + Deploy + Relay + Frontend)
-├── hardhat.config.js             # Hardhat 本地链配置 (chainId: 31337)
+├── docker-compose.yml            # Geth 4 容器联盟链编排 (Bootnode + NodeA/B/C)
+├── private-network/              # 联盟链创世配置 (密钥已 .gitignore 隔离)
+│   └── genesis.json              #   Clique PoA 创世块 (chainId: 12345, period: 3s)
+├── start.sh                      # 一键启动脚本 (Docker Geth + Deploy + Relay + Frontend)
+├── hardhat.config.js             # Hardhat 配置 (chainId: 12345)
 ├── package.json                  # Node.js 依赖
-└── .gitignore                    # 已隔离 *.db, .venv/, artifacts/, cache/, node_modules/
+└── .gitignore                    # 已隔离 *.db, .venv/, artifacts/, cache/, node_modules/, keystore/
 ```
 
 ---
@@ -290,8 +297,9 @@ campus-secondhand-dapp/
 
 | 组件 | 版本 | 用途 |
 |------|------|------|
-| Node.js | ≥18.x | Hardhat 编译 + 测试 |
-| Python | ≥3.10 | FastAPI 中继 + 部署脚本 |
+| Docker + Compose | ≥24.x | Geth 联盟链容器化运行 |
+| Node.js | ≥18.x | Hardhat 编译 + 合约测试 |
+| Python | ≥3.10 | FastAPI 中继 + 部署 + 监控 |
 | MetaMask | 任意版本 | 浏览器钱包签名 |
 
 ### 零、安装依赖（仅首次）
@@ -308,17 +316,17 @@ npx hardhat compile
 ./start.sh
 ```
 
-自动完成：启动 Hardhat 节点 → 部署合约 → 启动 API 中继 → 启动前端服务器。
+自动完成：启动 Geth 联盟链 (Docker) → 部署合约 → 启动 API 中继 → 启动前端服务器。
 
-打开 `http://localhost:8080`，在 MetaMask 中切换到 `localhost:8545` (Chain ID: `31337`)，即可开始使用。`Ctrl+C` 一键停止所有服务。
+打开 `http://localhost:8080`，在 MetaMask 中切换到 `localhost:8545` (Chain ID: `12345`)，即可开始使用。`Ctrl+C` 一键停止所有服务。
 
 前端合约地址自动从 relay `/api/config` 动态加载，**无需手动修改任何配置**。
 
 ### 二、手动启动（分步调试）
 
 ```bash
-# 终端 1: 本地链
-npx hardhat node
+# 终端 1: 启动 Geth 联盟链 (3 共识节点 + 1 Bootnode)
+docker compose up -d
 
 # 终端 2: 部署合约
 python3 relay/deploy.py
@@ -328,6 +336,9 @@ uvicorn relay.main:app --port 8000
 
 # 终端 3: 前端静态服务器
 cd frontend && python3 -m http.server 8080
+
+# (可选) 终端 4: 联盟链实时监控面板
+python3 scripts/monitor.py
 ```
 
 ### 三、运行测试
@@ -339,66 +350,56 @@ npx hardhat test
 
 ---
 
-## 🎬 2 分钟期末答辩 Live Demo 黄金脚本
+## 🔍 链上交易溯源与区块链浏览器
 
-以下为评委/教授现场演示的精确路线，按时间戳逐帧执行。提前准备好三个 MetaMask 账户（买家、卖家、仲裁人1）以支持快速角色切换。
+### 交易时间线
 
-> **准备**：确保 Hardhat 节点 + FastAPI 中继已在后台运行。
+每个订单卡片下方自动渲染**链上交易溯源时间线**，展示该订单完整的生命周期轨迹：
 
-### ⏱️ 0:00–0:15 — 开场：白名单注册
+```
+📦 CREATED   ── Block #1583 ── Tx: 0x1111...
+  │
+  ▼
+💰 FUNDED    ── Block #1589 ── Tx: 0x2222...
+  │
+  ▼
+🚚 SHIPPED   ── Block #1592 ── Tx: 0x3333...
+```
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 1 | MetaMask 切换到 **卖家账户** (Account #2) | 右上角地址变更为卖家 |
-| 2 | 点击 **Seller** Tab | 界面切换到卖家视图 |
-| 3 | 点击 `Register Whitelist` 按钮 | MetaMask 弹窗 → Confirm |
-| 4 | 等待 tx 确认 | 页面提示 "Whitelisted!" |
+- **数据来源**: 事件监听器在同步链上事件时，将 `action`、`tx_hash`、`block_number` 写入 `order_tx_history` 表
+- **去重保障**: 同一订单的同一 action 只记录一次，防止重启监听器时重复写入
 
-> **口播**："卖家首先通过 Merkle 白名单验证，前端自动从 Relay 获取该地址的 Merkle Proof，提交到链上智能合约进行零知识风格的密码学验证。链上仅存储 32 字节的 Root，验证复杂度是 log N。"
+### 迷你区块链浏览器弹窗
 
-### ⏱️ 0:15–0:40 — 正向交易闭环
+点击时间线上的任意交易哈希，弹出 **Etherscan 风格磨砂玻璃弹窗**，实时向 Geth 节点查询链上交易详情：
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 5 | 在 Seller 视图填写商品信息 → 选择买家地址 → `Create Order` | 订单卡片出现在列表中，状态 = `CREATED` |
-| 6 | MetaMask 切换到 **买家账户** (Account #1) → 点击 **Buyer** Tab | 界面切换到买家视图 |
-| 7 | 在买家视图中看到该订单 → 点击 `Fund` | MetaMask 确认付款 (1 ETH) |
-| 8 | 等待 tx 确认 | 订单状态 → `FUNDED` (资金锁定在合约) |
-| 9 | MetaMask 切回 **卖家** → 点击 `Ship` | 状态 → `SHIPPED` |
-| 10 | MetaMask 切回 **买家** → 点击 `Receive` | 状态 → `COMPLETED`，卖家收到 ETH |
+| 展示字段 | 数据来源 |
+|----------|----------|
+| Tx Hash + 一键复制 | 前端传入 |
+| Status (Success/Fail) | `receipt.status` |
+| Block # + Block Hash | `tx.blockNumber` + `block.hash` |
+| Timestamp | `block.timestamp` |
+| From / To | `tx.from` / `tx.to` |
+| Value | `w3.from_wei(tx.value, 'ether')` |
+| Gas Fee | `receipt.gasUsed` @ `gasPrice` Gwei |
 
-> **口播**："整个交易闭环在 20 秒内完成。资金从未经过平台服务器，全程在智能合约中物理隔离。这是传统中心化架构无法实现的——无组织资产托管。"
+**实现路径**: 前端 → `GET /api/tx/{tx_hash}` → Web3.py RPC → Geth 节点 → 返回 JSON
 
-### ⏱️ 0:40–1:10 — 争议仲裁演示（核心亮点）
+---
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 11 | 卖家创建新订单 → 买家付款 → 买家点击 `Dispute`，填写原因 | 状态 → `DISPUTED` |
-| 12 | MetaMask 切换到 **仲裁人1** (Account #3) → 点击 **Arbiter** Tab | 仲裁面板显示争议列表 |
-| 13 | 仲裁人1 投票 ✅ **支持买家** | 票数: Buyer=1, Seller=0 |
-| 14 | MetaMask 切换到 **仲裁人2** (Account #4) → 同样投票 ✅ **支持买家** | 票数: Buyer=2, Seller=0 |
-| 15 | 点击 `Execute Arbitration` | 票数 ≥ 2/3 阈值 → 资金退回买家 |
+## 🖥️ 联盟链实时监控面板
 
-> **口播**："争议发生后，任意单个仲裁人无法单独裁决——需要 3 方中至少 2 方达成共识。这是博弈均衡设计：校方、学生会、平台管理员三方制衡，任何两方合谋也无法单独作恶。"
+```bash
+python3 scripts/monitor.py
+```
 
-### ⏱️ 1:10–1:45 — 负面测试（展示防御能力）
+终端可视化面板提供：
 
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 16 | 用未注册白名单的账户尝试 `Create Order` | MetaMask revert: `Not whitelisted` |
-| 17 | 用非买家账户尝试 `Fund` | revert: `Only buyer` |
-| 18 | 用非仲裁人账户尝试 `Vote` | revert: `Only arbitrator can vote` |
+- **节点状态**: 3 个 Geth 节点在线状态、区块高度、对等连接数
+- **区块链接可视化**: 最近 8 个区块的哈希链接关系、出块节点身份
+- **交易历史**: 最近 15 笔已确认交易，含发送方/接收方/金额/所在区块
 
-> **口播**："三次攻击尝试全部被智能合约的影子验证机制拦截。每个操作在执行前都会创建一个内存影子副本进行权限和状态合法性校验，只有全部通过后才原子写入链上存储——消除中间状态不一致的安全窗口。"
-
-### ⏱️ 1:45–2:00 — 收尾
-
-| 步骤 | 操作 | 预期结果 |
-|------|------|----------|
-| 19 | 打开终端运行 `npx hardhat test` | 22/22 passing |
-| 20 | `curl http://localhost:8000/api/orders` | JSON 列表展示全部链上订单已同步 |
-
-> **口播**："22 条 TDD 测试全绿通过，覆盖白名单验证、正向交易流程、争议仲裁路径、影子状态防护、以及权限拦截矩阵。链下中继层的 SQLite 通过事件监听器实时同步链上状态，为用户提供毫秒级的查询体验。"
+监控面板每 1.5 秒刷新，适合答辩现场在终端侧屏展示联盟链的实时共识过程。
 
 ---
 
@@ -431,8 +432,10 @@ npx hardhat test
 | 测试 | 覆盖 |
 |------|------|
 | 数据库 CRUD 操作 | `init_db`, `upsert_order`, `get_orders`, `get_order` |
+| 交易历史记录 | `insert_tx_history`, `get_tx_history_by_order`, 去重防护 |
 | 争议 API | `create_dispute`, `get_disputes` |
 | Merkle Proof 签发 | `generate_whitelist`, `verify_proof` 自检 |
+| 链上交易查询 | `GET /api/tx/{tx_hash}` 实时 RPC 查询 |
 
 ---
 

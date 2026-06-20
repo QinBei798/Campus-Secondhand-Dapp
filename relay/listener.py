@@ -23,6 +23,7 @@ from relay.db import (
     update_dispute_votes,
     get_last_synced_block,
     update_sync_block,
+    insert_tx_history,
 )
 
 logger = logging.getLogger("relay.listener")
@@ -42,6 +43,12 @@ def handle_order_created(event: EventData) -> None:
         amount_wei=args["amount"],
         state="CREATED",
     )
+    insert_tx_history(
+        contract_order_id=args["orderId"],
+        action="CREATED",
+        tx_hash=event.transactionHash.hex(),
+        block_number=event.blockNumber,
+    )
     logger.info(f"Order {args['orderId']} CREATED: seller={args['seller']}, "
                 f"buyer={args['buyer']}, amount={args['amount']}")
 
@@ -49,18 +56,36 @@ def handle_order_created(event: EventData) -> None:
 def handle_order_funded(event: EventData) -> None:
     args = event.args
     upsert_order_partial(contract_id=args["orderId"], state="FUNDED")
+    insert_tx_history(
+        contract_order_id=args["orderId"],
+        action="FUNDED",
+        tx_hash=event.transactionHash.hex(),
+        block_number=event.blockNumber,
+    )
     logger.info(f"Order {args['orderId']} FUNDED by {args['buyer']}")
 
 
 def handle_order_shipped(event: EventData) -> None:
     args = event.args
     upsert_order_partial(contract_id=args["orderId"], state="SHIPPED")
+    insert_tx_history(
+        contract_order_id=args["orderId"],
+        action="SHIPPED",
+        tx_hash=event.transactionHash.hex(),
+        block_number=event.blockNumber,
+    )
     logger.info(f"Order {args['orderId']} SHIPPED at {args['timestamp']}")
 
 
 def handle_order_received(event: EventData) -> None:
     args = event.args
     upsert_order_partial(contract_id=args["orderId"], state="COMPLETED")
+    insert_tx_history(
+        contract_order_id=args["orderId"],
+        action="COMPLETED",
+        tx_hash=event.transactionHash.hex(),
+        block_number=event.blockNumber,
+    )
     logger.info(f"Order {args['orderId']} RECEIVED (COMPLETED) at {args['timestamp']}")
 
 
@@ -68,6 +93,12 @@ def handle_order_disputed(event: EventData) -> None:
     args = event.args
     upsert_order_partial(contract_id=args["orderId"], state="DISPUTED")
     upsert_dispute(contract_id=args["orderId"], order_id=args["orderId"], reason="")
+    insert_tx_history(
+        contract_order_id=args["orderId"],
+        action="DISPUTED",
+        tx_hash=event.transactionHash.hex(),
+        block_number=event.blockNumber,
+    )
     logger.info(f"Order {args['orderId']} DISPUTED by {args['initiator']}")
 
 
@@ -107,6 +138,12 @@ def handle_dispute_resolved(event: EventData) -> None:
     if order_id is not None:
         update_dispute_votes(order_id, 0, 0, resolved=1)
         upsert_order_partial(contract_id=order_id, state="COMPLETED")
+        insert_tx_history(
+            contract_order_id=order_id,
+            action="RESOLVED",
+            tx_hash=event.transactionHash.hex(),
+            block_number=event.blockNumber,
+        )
     else:
         # Fallback: scan all orders on-chain to find and update the resolved one
         _refresh_all_disputed_orders()

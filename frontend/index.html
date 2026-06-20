@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>校园二手交易平台 — 区块链担保托管</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 <style>
@@ -21,7 +24,7 @@
   --radius: 16px;
   --shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
 }
-body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+body { background: var(--bg); color: var(--text); font-family: 'Outfit', 'Inter', system-ui, -apple-system, sans-serif; }
 
 /* Navbar */
 .navbar-brand { font-weight: 700; letter-spacing: -.02em; }
@@ -87,6 +90,129 @@ body { background: var(--bg); color: var(--text); font-family: 'Inter', system-u
 @media (max-width: 768px) {
   .order-grid { grid-template-columns: 1fr; }
   .nav-pills .nav-link { padding: 8px 16px; font-size: .85rem; }
+}
+
+/* Timeline styling */
+.order-timeline {
+  font-size: 0.8rem;
+}
+.timeline-title {
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+.timeline-container {
+  position: relative;
+  padding-left: 20px;
+  border-left: 2px dashed var(--border);
+  margin-left: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.timeline-item {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.timeline-icon {
+  position: absolute;
+  left: -28px;
+  top: 0px;
+  background: var(--card-bg);
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.78rem;
+}
+.timeline-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+}
+.timeline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.timeline-action {
+  font-weight: 600;
+  color: var(--text);
+  font-size: 0.78rem;
+}
+.timeline-block {
+  font-size: 0.65rem;
+  padding: 1px 5px;
+}
+.timeline-hash-link {
+  color: var(--accent);
+  cursor: pointer;
+  font-family: 'JetBrains Mono', monospace;
+  text-decoration: underline;
+  align-self: flex-start;
+  transition: color 0.2s;
+  font-size: 0.72rem;
+}
+.timeline-hash-link:hover {
+  color: var(--accent-hover);
+}
+
+/* Glassmorphism Etherscan-style Modal */
+.glass-modal {
+  background: rgba(15, 23, 42, 0.88); /* Slate 900 tint */
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.6);
+  border-radius: 20px;
+}
+.text-accent-glow {
+  color: #818cf8; /* Light Indigo */
+  text-shadow: 0 0 8px rgba(129, 140, 248, 0.4);
+}
+.tx-details-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.detail-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+@media (min-width: 576px) {
+  .detail-row {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+  .detail-label {
+    width: 120px;
+    flex-shrink: 0;
+  }
+  .detail-value {
+    flex-grow: 1;
+  }
+}
+.detail-label {
+  font-weight: 600;
+  color: #94a3b8; /* Slate 400 */
+  font-size: 0.8rem;
+}
+.detail-value {
+  color: #f8fafc; /* Slate 50 */
+  font-size: 0.82rem;
+}
+.hover-white {
+  transition: color 0.15s;
+}
+.hover-white:hover {
+  color: #ffffff !important;
 }
 </style>
 </head>
@@ -242,6 +368,8 @@ body { background: var(--bg); color: var(--text); font-family: 'Inter', system-u
 // ===========================================================================
 // CONFIGURATION — 修改此处以适配部署环境
 // ===========================================================================
+const MOCK_UI_TEST = false;
+
 const CONFIG = {
   apiBase: 'http://localhost:8000',
   escrowAddress: null,     // loaded from relay /api/config
@@ -323,7 +451,29 @@ function formatTs(ts) { return ts ? new Date(ts).toLocaleString('zh-CN') : '—'
 async function apiGet(path) {
   const resp = await fetch(`${CONFIG.apiBase}${path}`);
   if (!resp.ok) throw new Error(`API ${resp.status}: ${resp.statusText}`);
-  return resp.json();
+  let data = await resp.json();
+  if (MOCK_UI_TEST && path.startsWith('/api/orders')) {
+    // 给每个订单填充一些模拟的轨迹数据
+    data = data.map(o => {
+      const mockHistory = [
+        { action: 'CREATED', tx_hash: '0x111122223333444455556666777788889999aaaa', block_number: 1583, created_at: o.created_at }
+      ];
+      if (o.state !== 'CREATED') {
+        mockHistory.push({ action: 'FUNDED', tx_hash: '0x22223333444455556666777788889999aaaabbbb', block_number: 1589, created_at: o.updated_at });
+      }
+      if (o.state === 'SHIPPED' || o.state === 'COMPLETED') {
+        mockHistory.push({ action: 'SHIPPED', tx_hash: '0x3333444455556666777788889999aaaabbbbcccc', block_number: 1592, created_at: o.updated_at });
+      }
+      if (o.state === 'COMPLETED') {
+        mockHistory.push({ action: 'COMPLETED', tx_hash: '0x444455556666777788889999aaaabbbbccccdddd', block_number: 1595, created_at: o.updated_at });
+      }
+      if (o.state === 'DISPUTED') {
+        mockHistory.push({ action: 'DISPUTED', tx_hash: '0x55556666777788889999aaaabbbbccccddddeeee', block_number: 1597, created_at: o.updated_at });
+      }
+      return { ...o, history: mockHistory };
+    });
+  }
+  return data;
 }
 
 // ===========================================================================
@@ -604,6 +754,7 @@ function renderSellerOrderCard(o) {
         ${o.state === 'SHIPPED' ? `<div class="text-muted small mt-2 text-center"><span class="pulse">⏳ 等待买家确认收货...</span></div>` : ''}
         ${o.state === 'DISPUTED' ? `<div class="text-danger small mt-2 text-center"><i class="bi bi-shield-exclamation"></i> 纠纷处理中 — 等待仲裁结果</div>` : ''}
         ${o.state === 'COMPLETED' ? `<div class="text-success small mt-2 text-center"><i class="bi bi-check-circle"></i> 交易完成，资金已到账</div>` : ''}
+        ${renderTimelineHtml(o.history)}
       </div>
     </div>`;
 }
@@ -671,6 +822,7 @@ function renderBuyerOrderCard(o) {
         </div>
         ${isMyOrder ? '<div class="badge bg-light text-primary mb-2">我的订单</div>' : ''}
         ${o.state === 'COMPLETED' ? '<div class="text-success small text-center"><i class="bi bi-check-circle"></i> 交易完成</div>' : actions}
+        ${renderTimelineHtml(o.history)}
       </div>
     </div>`;
 }
@@ -819,6 +971,180 @@ async function loadArbitratorDisputes() {
     console.error('Load disputes error:', err);
     container.innerHTML = `<div class="empty-state"><i class="bi bi-exclamation-triangle d-block"></i>加载失败: ${err.message}</div>`;
   }
+}
+
+function renderTimelineHtml(history) {
+  if (!history || history.length === 0) return '';
+  const actionIcons = {
+    'CREATED': '📦',
+    'FUNDED': '💰',
+    'SHIPPED': '🚚',
+    'COMPLETED': '✅',
+    'DISPUTED': '🚨',
+    'RESOLVED': '⚖️'
+  };
+  const actionNames = {
+    'CREATED': '创建挂牌',
+    'FUNDED': '锁定资金',
+    'SHIPPED': '发货确认',
+    'COMPLETED': '释放放款',
+    'DISPUTED': '申请仲裁',
+    'RESOLVED': '仲裁裁决'
+  };
+  const items = history.map(item => {
+    const icon = actionIcons[item.action] || '🔹';
+    const name = actionNames[item.action] || item.action;
+    const shortHash = shortAddr(item.tx_hash);
+    return `
+      <div class="timeline-item">
+        <div class="timeline-icon">${icon}</div>
+        <div class="timeline-content">
+          <div class="timeline-header">
+            <span class="timeline-action">${name}</span>
+            <span class="badge bg-secondary-subtle text-secondary-emphasis rounded-pill timeline-block">Block #${item.block_number}</span>
+          </div>
+          <div class="timeline-hash-link" onclick="showTxDetailModal('${item.tx_hash}')" title="点击查看链上交易详情">${shortHash}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  return `
+    <div class="order-timeline mt-3 pt-2 border-top">
+      <div class="timeline-title mb-2"><i class="bi bi-clock-history"></i> 链上交易溯源时间线</div>
+      <div class="timeline-container">
+        ${items}
+      </div>
+    </div>
+  `;
+}
+
+async function showTxDetailModal(txHash) {
+  const modalId = 'txDetailModal';
+  const old = document.getElementById(modalId);
+  if (old) old.remove();
+
+  const modalHtml = `
+    <div class="modal fade" id="${modalId}" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content glass-modal text-white">
+          <div class="modal-header border-0 pb-0">
+            <h6 class="modal-title fw-bold text-uppercase tracking-wider"><i class="bi bi-cpu text-accent-glow"></i> Transaction Details</h6>
+            <button class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body py-4" id="txModalBody">
+            <div class="text-center py-5">
+              <div class="spinner-border text-light spin" role="status"></div>
+              <div class="mt-3 small text-white-50">Querying consortium network...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+  const modalEl = document.getElementById(modalId);
+  const bsModal = new bootstrap.Modal(modalEl);
+  bsModal.show();
+
+  let txData;
+  try {
+    if (MOCK_UI_TEST) {
+      // simulate delay for beautiful loading spinner
+      await new Promise(resolve => setTimeout(resolve, 600));
+      txData = {
+        status: 1,
+        block_number: 1583,
+        block_hash: "0xabc1234567890abcdef1234567890abcdef1234567890abcdef1234567890abc",
+        from: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        to: CONFIG.escrowAddress || "0x63F891338ca09483C1112a20355ca298f90624ba",
+        value_eth: "1.0",
+        gas_used: 45120,
+        gas_price_gwei: "20.0",
+        timestamp: 1781892003
+      };
+    } else {
+      txData = await apiGet(`/api/tx/${txHash}`);
+    }
+    renderTxDetailModalContent(txData, txHash);
+  } catch (err) {
+    document.getElementById('txModalBody').innerHTML = `
+      <div class="text-center py-4">
+        <i class="bi bi-exclamation-triangle text-danger display-5 d-block mb-3"></i>
+        <p class="text-white fw-bold mb-1">Failed to Query Transaction</p>
+        <p class="text-white-50 small">${err.message}</p>
+      </div>
+    `;
+  }
+}
+
+function renderTxDetailModalContent(tx, hash) {
+  const statusText = tx.status === 1 ? '🟢 Success' : '🔴 Fail';
+  const statusClass = tx.status === 1 ? 'text-success' : 'text-danger';
+  
+  let dateStr = '—';
+  if (tx.timestamp) {
+    const date = new Date(tx.timestamp * 1000);
+    dateStr = date.toLocaleString('zh-CN');
+  }
+
+  const bodyEl = document.getElementById('txModalBody');
+  bodyEl.innerHTML = `
+    <div class="tx-details-grid">
+      <div class="detail-row">
+        <div class="detail-label">Tx Hash</div>
+        <div class="detail-value font-monospace d-flex align-items-center gap-2">
+          <span id="copyHashText" style="word-break: break-all; font-size: 0.8rem; color: #818cf8;">${hash}</span>
+          <button class="btn btn-sm btn-link p-0 text-white-50 hover-white" onclick="copyText('copyHashText', this)" title="Copy Hash">
+            <i class="bi bi-copy"></i>
+          </button>
+        </div>
+      </div>
+      <div class="detail-row">
+        <div class="detail-label">Status</div>
+        <div class="detail-value fw-bold ${statusClass}">${statusText}</div>
+      </div>
+      <div class="detail-row">
+        <div class="detail-label">Block</div>
+        <div class="detail-value font-monospace">
+          #${tx.block_number} 
+          <span class="text-white-50 small ms-1" style="font-size: 0.72rem; word-break: break-all;">(${tx.block_hash.slice(0, 10)}...${tx.block_hash.slice(-8)})</span>
+        </div>
+      </div>
+      <div class="detail-row">
+        <div class="detail-label">Timestamp</div>
+        <div class="detail-value">${dateStr}</div>
+      </div>
+      <div class="detail-row border-top border-secondary-subtle pt-2 mt-2">
+        <div class="detail-label">From</div>
+        <div class="detail-value font-monospace" style="word-break: break-all; font-size: 0.78rem;">${tx.from}</div>
+      </div>
+      <div class="detail-row">
+        <div class="detail-label">To</div>
+        <div class="detail-value font-monospace" style="word-break: break-all; font-size: 0.78rem;">${tx.to}</div>
+      </div>
+      <div class="detail-row border-top border-secondary-subtle pt-2 mt-2">
+        <div class="detail-label">Value</div>
+        <div class="detail-value fw-bold text-success">${tx.value_eth} ETH</div>
+      </div>
+      <div class="detail-row">
+        <div class="detail-label">Gas Fee</div>
+        <div class="detail-value font-monospace">${tx.gas_used.toLocaleString()} gas <span class="text-white-50" style="font-size: 0.75rem;">(@ ${tx.gas_price_gwei} Gwei)</span></div>
+      </div>
+    </div>
+  `;
+}
+
+function copyText(elemId, btn) {
+  const text = document.getElementById(elemId).textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const icon = btn.querySelector('i');
+    icon.className = 'bi bi-check-lg text-success';
+    setTimeout(() => {
+      icon.className = 'bi bi-copy';
+    }, 1500);
+  }).catch(err => {
+    console.error('Copy failed:', err);
+  });
 }
 
 async function voteDispute(orderId, forBuyer) {

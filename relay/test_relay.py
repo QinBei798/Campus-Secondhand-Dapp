@@ -24,6 +24,8 @@ from relay.db import (
     get_order,
     get_disputes,
     create_dispute,
+    insert_tx_history,
+    get_tx_history_by_order,
 )
 
 TEST_DB = os.path.join(os.path.dirname(__file__), "test_relay.db")
@@ -119,6 +121,21 @@ class TestDatabase:
         create_dispute(0, 0, "Not delivered")
         disputes = get_disputes()
         assert len(disputes) == 1
+
+    def test_order_tx_history_operations(self):
+        insert_tx_history(1, "CREATED", "0x1111", 100)
+        insert_tx_history(1, "FUNDED", "0x2222", 105)
+        # test duplicate prevention
+        insert_tx_history(1, "CREATED", "0x3333", 110)
+        
+        history = get_tx_history_by_order(1)
+        assert len(history) == 2
+        assert history[0]["action"] == "CREATED"
+        assert history[0]["tx_hash"] == "0x1111"
+        assert history[0]["block_number"] == 100
+        assert history[1]["action"] == "FUNDED"
+        assert history[1]["tx_hash"] == "0x2222"
+        assert history[1]["block_number"] == 105
 
 
 # ================================================================
@@ -290,3 +307,24 @@ class TestAPIEndpoints:
     def test_get_whitelist_proof_unknown_address(self, api_client):
         resp = api_client.get("/api/whitelist/proof/0x0000000000000000000000000000000000000001")
         assert resp.status_code == 404
+
+    def test_get_order_includes_history(self, api_client):
+        from relay.db import insert_tx_history
+        upsert_order(10, "0xBuyer", "0xSeller", "1000", "CREATED", "Laptop")
+        insert_tx_history(10, "CREATED", "0x1111", 100)
+        
+        resp = api_client.get("/api/orders/10")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["history"]) == 1
+        assert data["history"][0]["action"] == "CREATED"
+        assert data["history"][0]["tx_hash"] == "0x1111"
+        assert data["history"][0]["block_number"] == 100
+
+    def test_get_tx_details_mock(self, api_client):
+        resp = api_client.get("/api/tx/0xabc")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == 1
+        assert data["block_number"] == 1583
+        assert data["gas_used"] == 45120

@@ -3,6 +3,13 @@ from pydantic import BaseModel
 from typing import Optional, List
 
 
+class OrderTxHistoryResponse(BaseModel):
+    action: str
+    tx_hash: str
+    block_number: int
+    created_at: Optional[str] = None
+
+
 class OrderResponse(BaseModel):
     contract_id: int
     buyer: str
@@ -13,6 +20,7 @@ class OrderResponse(BaseModel):
     dispute_id: int = 0
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+    history: List[OrderTxHistoryResponse] = []
 
 
 class DisputeResponse(BaseModel):

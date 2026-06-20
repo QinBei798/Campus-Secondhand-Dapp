@@ -53,6 +53,16 @@ def init_db() -> None:
         );
 
         INSERT OR IGNORE INTO sync_state (key, value) VALUES ('last_block', '0');
+
+        CREATE TABLE IF NOT EXISTS order_tx_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            contract_order_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            tx_hash TEXT NOT NULL,
+            block_number INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(contract_order_id) REFERENCES orders(contract_id)
+        );
     """)
     conn.commit()
     conn.close()
@@ -108,6 +118,33 @@ def get_order(contract_id: int) -> Optional[dict]:
     row = conn.execute("SELECT * FROM orders WHERE contract_id=?", (contract_id,)).fetchone()
     conn.close()
     return dict(row) if row else None
+
+
+# ─── Order Transaction History ──────────────────────────────────
+
+def insert_tx_history(contract_order_id: int, action: str, tx_hash: str, block_number: int) -> None:
+    conn = get_connection()
+    exists = conn.execute(
+        "SELECT 1 FROM order_tx_history WHERE contract_order_id=? AND action=?",
+        (contract_order_id, action)
+    ).fetchone()
+    if not exists:
+        conn.execute("""
+            INSERT INTO order_tx_history (contract_order_id, action, tx_hash, block_number)
+            VALUES (?, ?, ?, ?)
+        """, (contract_order_id, action, tx_hash, block_number))
+        conn.commit()
+    conn.close()
+
+
+def get_tx_history_by_order(contract_order_id: int) -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT action, tx_hash, block_number, created_at FROM order_tx_history WHERE contract_order_id=? ORDER BY block_number ASC",
+        (contract_order_id,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 # ─── Disputes ──────────────────────────────────────────────────

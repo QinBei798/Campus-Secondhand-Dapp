@@ -21,7 +21,10 @@ if _scripts_dir not in sys.path:
     sys.path.insert(0, _scripts_dir)
 import merkle_gen  # noqa: E402
 
-from relay.db import init_db, get_orders, get_order, get_disputes, create_dispute  # noqa: E402
+from relay.db import (  # noqa: E402
+    init_db, get_orders, get_order, get_disputes, create_dispute,
+    get_tx_history_by_order,
+)
 from relay.models import (  # noqa: E402
     OrderResponse, DisputeResponse, DisputeCreate, WhitelistProofResponse,
 )
@@ -174,7 +177,13 @@ async def get_config():
 @app.get("/api/orders", response_model=list[OrderResponse])
 async def list_orders(state: Optional[str] = Query(None)):
     orders = get_orders(state_filter=state)
-    return [OrderResponse(**o) for o in orders]
+    res = []
+    for o in orders:
+        history = get_tx_history_by_order(o["contract_id"])
+        order_dict = dict(o)
+        order_dict["history"] = history
+        res.append(OrderResponse(**order_dict))
+    return res
 
 
 @app.get("/api/orders/{contract_id}", response_model=OrderResponse)
@@ -182,7 +191,10 @@ async def get_order_by_id(contract_id: int):
     order = get_order(contract_id)
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    return OrderResponse(**order)
+    history = get_tx_history_by_order(contract_id)
+    order_dict = dict(order)
+    order_dict["history"] = history
+    return OrderResponse(**order_dict)
 
 
 # ─── Disputes ──────────────────────────────────────────────────
@@ -222,3 +234,48 @@ async def get_whitelist_proof(address: str):
                 root=wl["root"],
             )
     raise HTTPException(status_code=404, detail="Address not in whitelist")
+
+
+def get_w3() -> "Web3":
+    from web3 import Web3
+    from web3.middleware import ExtraDataToPOAMiddleware
+    for url in RPC_ENDPOINTS:
+        try:
+            temp_w3 = Web3(Web3.HTTPProvider(url))
+            temp_w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+            if temp_w3.is_connected():
+                return temp_w3
+        except Exception:
+            pass
+    raise HTTPException(status_code=503, detail="All Geth nodes are offline")
+
+
+# ─── Transactions ──────────────────────────────────────────────
+
+@app.get("/api/tx/{tx_hash}")
+async def get_transaction_details(tx_hash: str):
+    """
+    Query real on-chain transaction receipt and details from Geth consortium nodes.
+    """
+    try:
+        w3 = get_w3()
+        # 1. 获取交易详情
+        tx = w3.eth.get_transaction(tx_hash)
+        # 2. 获取交易收据 (拿到实际 Gas 消耗与状态)
+        receipt = w3.eth.get_transaction_receipt(tx_hash)
+        # 3. 获取区块信息 (拿到精确时间戳)
+        block = w3.eth.get_block(tx.blockNumber)
+        
+        return {
+            "status": receipt["status"],  # 1 为成功，0 为失败
+            "block_number": tx["blockNumber"],
+            "block_hash": tx["blockHash"].hex(),
+            "from": tx["from"],
+            "to": tx["to"],
+            "value_eth": str(w3.from_wei(tx["value"], "ether")),
+            "gas_used": receipt["gasUsed"],
+            "gas_price_gwei": str(w3.from_wei(tx["gasPrice"], "gwei")),
+            "timestamp": block["timestamp"]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Transaction not found on-chain: {str(e)}")
