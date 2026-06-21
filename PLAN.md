@@ -1,171 +1,49 @@
-# 校园二手交易平台 — 全栈开发排期
+# 学术报告内容增量升级与编译生成计划 (PLAN.md)
 
-> **总工期**: 4 天（周一下午 → 周四晚，周五预留联调 buffer）
-> **模式**: Vibe Coding + TDD（先写边界拦截测试，再写业务逻辑）
+针对当前代码仓库重构为 Geth PoA 私有联盟链、密钥受控解密机制以及实时合规审计监控等底层基础设施组件的升级，本计划将对学术报告 `docs/reports/academic-report.md` 进行内容同步增量升级，并编译生成严格学术规范的黑白 Word 文档。
 
----
+## 一、 基础设施组件审阅结论
+1. **`private-network/genesis.json` & `docker-compose.yml`**：定义了 Clique (PoA) 共识机制（包含 3 个 Validators 节点，打包时间为 3 秒），构建了基于 Docker 容器化的多节点私有联盟链网络。
+2. **`scripts/decrypt_keystores.py`**：利用 Web3 工业标准解密 Keystore，运行时将私钥加载进内存以提升密钥安全性。
+3. **`scripts/monitor.py`**：实时监听节点高度、P2P 连接数、Sealer 签名打包状况及 DApp 链上交易。
+4. **`start.sh`**：实现了一键式多容器联盟链网络启动、合约部署、中继 FastAPI 与前端服务加载的快速交付流程。
 
-## Day 1（周一 6/14）：基础设施搭建 + 合约层核心
+## 二、 学术报告 `docs/reports/academic-report.md` 修改与增量方案
 
-### Task 0: 项目脚手架初始化
-- [ ] `npx hardhat init` 初始化合约工程
-- [ ] `pip install fastapi uvicorn web3 py-solc-x sqlite3` Python 中继环境
-- [ ] 创建前端单文件 `frontend/index.html`
-- [ ] `.gitignore` 补充（node_modules, __pycache__, artifacts, cache）
+### 1. 一、绪论与传统闭环校园交易的系统性脆弱分析
+- **定位更新**：明确将研究对象定义为“基于自建 Geth 私有联盟链的校园垂直微金融基础设施”。
 
-### Task 1: Merkle 白名单合约 + Python 证明生成器
-**文件**: `contracts/MerkleWhitelist.sol`, `scripts/merkle_gen.py`
+### 2. 二、系统创新架构映射 (新增章节)
+- **读写通路混合分离架构图 (ASCII)**：设计并插入一个标准的系统架构拓扑图，展示 Buyer、Seller、Arbitrators 经由静态 H5 前端（Ethers.js）发起写交易至 Geth PoA 网络，而读请求则向 FastAPI 中继缓存层查询 SQLite 的通路。
+- **PoA 必要性论证**：论证在校园生态信任域内，校方信息中心、学生会等构成天然权威，使用记名 Validators 的 PoA 共识，可消除 PoW 算力开销并规避 PoS 中心化币权垄断，实现毫秒级打包与抗 51% 攻击的强安全性。
 
-- [ ] **TDD**: 先写 Hardhat 测试 `test/merkle.test.js`
-  - 测试用例：空列表应 revert、有效 proof 通过、无效 proof revert、重放攻击拦截
-- [ ] 编写 `MerkleWhitelist.sol`
-  - 存储 Merkle Root（由 owner 设置）
-  - `verify(bytes32[] proof, bytes32 leaf)` 纯函数，两两哈希归约 → 比对 root
-  - 使用 `keccak256(abi.encodePacked(studentId, timestamp))` 为叶子
-- [ ] 编写 `scripts/merkle_gen.py`
-  - 输入：白名单 CSV (学号列表)
-  - 输出：Merkle Root + 每个用户的 Proof
-  - 算法迁移自 `Merkle.cpp`：叶子层 → while len > 1 → 两两 concat + hash → 奇数尾复制
-- [ ] `npx hardhat test test/merkle.test.js` 全绿
+### 3. 三、确定性资产托管与去中心化清算的合规性刚需论证 (原第二章顺延)
+- 将旧的第二章重命名并顺延为第三章，更新文中所有 `2.x` 编号为 `3.x`。
 
-### Task 2: 担保托管有限状态机合约
-**文件**: `contracts/Escrow.sol`
+### 4. 四、跨世代网络生命周期与零运维费生存特性分析 (原第三章顺延)
+- 将旧的第三章重命名并顺延为第四章，更新文中所有 `3.x` 编号为 `4.x`。
 
-状态机：
-```
-CREATED → FUNDED → SHIPPED → RECEIVED → COMPLETED
-                    ↓                    ↑
-                 DISPUTED → ARBITRATING ↗ (via 2/3 multisig)
-```
+### 5. 五、基于 Merkle 树与密码学承诺的声誉矩阵与防女巫准入 (原第四章顺延)
+- 将旧的第四章重命名并顺延为第五章，更新文中所有 `4.x` 编号为 `5.x`。
 
-- [ ] **TDD**: `test/escrow.test.js`
-  - 正向流程：CREATED→FUNDED→SHIPPED→RECEIVED→COMPLETED 全路径
-  - 异常拦截：非买家不能 funded、非卖家不能 shipped、非买家不能 received
-  - 争议路径：任意方可 dispute → 进入 DISPUTED → 仲裁投票通过 → COMPLETED
-  - 边界：重复 funded revert、未 funded 时 shipped revert、仲裁中非仲裁人投票 revert
-- [ ] 编写 `Escrow.sol`
-  - 枚举 `State { CREATED, FUNDED, SHIPPED, RECEIVED, COMPLETED, DISPUTED }`
-  - 状态转换修饰符 `onlyInState(State s)`, `onlyBuyer`, `onlySeller`, `onlyArbitrator`
-  - 资金托管：`fund()` 转入合约，`release()` 转给卖家，`refund()` 退给买家
-  - 超时机制：`SHIPPED` 状态 N 天后买家未确认 → 卖家可申请自动完成
-  - **影子状态验证**：借鉴 `Blockchain.cpp:98` 的影子账本模式 — 所有状态变更先用 local copy 模拟，验证通过后再写入 storage
-- [ ] `npx hardhat test test/escrow.test.js` 全绿
+### 6. 六、安全设计 (新增与整合章节)
+- **密钥安全管理**：结合 `decrypt_keystores.py`，论证明文私钥不落盘、使用加密 Keystore 文件在运行时解密注入内存的缓释泄露方案。
+- **合规审计防线**：结合 `monitor.py` 论证实时状态检索与事件审计。阐述“事前准入(Merkle) + 事中隔离(Escrow) + 事后审计(Monitor)”的三阶闭环全生命周期安全矩阵。
+- **多签仲裁整合**：将原本的 `五、博弈均衡视角下的 2/3 多签仲裁有效性评估` 作为 `### 6.3 基于博弈均衡的 2/3 多签仲裁有效性评估` 编入本章。
 
-### Task 3: 2/3 多签仲裁合约
-**文件**: `contracts/MultiSig.sol`
+### 7. 七、系统验证结论 (原第六章顺延与重构)
+- **部署指南更新**：在 `### 7.3 基于 Docker Compose 与一键脚本的一体化交付指南` 中，将原 Hardhat 指南更新为基于 `docker-compose.yml` 与 `start.sh` 的 Geth 多容器联盟网络一键快速交付流水线。
+- **总结更新**：对应调整最后一节的学术总结。
 
-- [ ] **TDD**: `test/multisig.test.js`
-  - 2/3 签名通过执行、1/3 不足 revert、重复签名拒绝、过期提案 revert
-- [ ] 编写 `MultiSig.sol`
-  - `submitProposal(bytes32 txHash)` → 返回 proposalId
-  - `approve(uint256 proposalId)` → 累计确认数
-  - `execute(uint256 proposalId)` → 确认数 >= 2 且未过期 → 执行
-  - 与 Escrow 合约交互：`Escrow(msg.sender).resolveDispute(...)`
-- [ ] `npx hardhat test test/multisig.test.js` 全绿
+## 三、 黑白学术格式规范锁死
+1. **页面布局**：上/下边距 2.54 厘米，左/右边距 3.18 厘米。
+2. **段落格式**：正文 1.5 倍行距，段前段后 0 磅，中文首行缩进 2 字符，两端对齐。
+3. **字体配对**：中文宋体（标题黑体），英文/数字 Times New Roman。
+4. **字号层级**：大标题二号（22pt）黑体居中；一级标题三号（16pt）黑体/加粗；二级标题四号（14pt）黑体/加粗；三级标题小四号（12pt）宋体加粗；正文小四号（12pt）宋体/TNR。
+5. **黑白三线表**：顶底线 1.5 磅粗线，表头底线 0.75 磅细线，无任何竖线与内部横线，背景纯白。表头文字居中加粗，内容五号/小五号字。
+6. **等宽代码与 ASCII 拓扑**：使用 `Consolas` 等宽字体，字号降为 9pt，不缩进，左缩进 0.5 英寸，灰色背景（#F5F5F5）与左边框。
 
----
-
-## Day 2（周二 6/15）：合约联调 + 链下中继
-
-### Task 4: 合约集成测试 + Hardhat 本地链部署
-- [ ] `scripts/deploy.js` — 一次性部署 MerkleWhitelist + Escrow + MultiSig
-- [ ] `test/integration.test.js` — 全流程集成测试：
-  白名单用户 → 创建订单 → 托管付款 → 发货 → 争议 → 2/3 仲裁 → 放款
-- [ ] `npx hardhat node` 启动本地链，`npx hardhat run scripts/deploy.js --network localhost` 部署
-
-### Task 5: Python FastAPI 链下中继
-**文件**: `relay/main.py`, `relay/db.py`, `relay/listener.py`
-
-- [ ] **TDD**: `relay/test_relay.py` (pytest)
-  - `test_listen_escrow_created`: mock Web3 event → 断言 DB 写入
-  - `test_sync_order_state`: 模拟链上状态变更 → 断言 SQLite 同步
-- [ ] `relay/db.py` — SQLite ORM (sqlite3)
-  ```sql
-  CREATE TABLE orders (
-    id INTEGER PRIMARY KEY,
-    contract_addr TEXT,
-    buyer TEXT, seller TEXT,
-    amount_wei INTEGER,
-    state TEXT,
-    merkle_proof TEXT,  -- JSON array
-    created_at TIMESTAMP,
-    updated_at TIMESTAMP
-  );
-  CREATE TABLE disputes (
-    id INTEGER PRIMARY KEY,
-    order_id INTEGER,
-    reason TEXT,
-    votes TEXT,  -- JSON {arbitrator: vote}
-    resolved_at TIMESTAMP
-  );
-  ```
-- [ ] `relay/listener.py` — Web3.py 异步事件监听
-  - 监听 `OrderCreated`, `OrderFunded`, `OrderShipped`, `OrderReceived`, `OrderDisputed`, `OrderResolved`
-  - 每个事件 → 增量更新 SQLite
-- [ ] `relay/main.py` — FastAPI 端点
-  - `GET /api/orders` — 全部订单列表
-  - `GET /api/orders/{id}` — 单订单详情 + 状态
-  - `GET /api/whitelist/proof/{student_id}` — 查询 Merkle Proof
-  - `POST /api/disputes` — 提交仲裁请求
-- [ ] `pytest relay/test_relay.py -v` 全绿
-
----
-
-## Day 3（周三 6/16）：前端 H5 控制台 + 端到端集成
-
-### Task 6: 单文件三合一 H5 控制台
-**文件**: `frontend/index.html`
-
-单文件包含买家/卖家/仲裁人三种角色视图，Tab 切换。
-
-- [ ] 技术选型：CDN 引入 Bootstrap 5 + ethers.js 6
-- [ ] 三 Tab 布局：
-  - **买家视图**: 浏览商品 → 选择 → 提交 Merkle Proof → 托管付款 → 确认收货
-  - **卖家视图**: 发布商品 → 等待付款 → 确认发货
-  - **仲裁人视图**: 查看争议列表 → 投票 (Approve/Reject) → 查看多签状态
-- [ ] Metamask 钱包连接 (`ethers.BrowserProvider`)
-- [ ] 与 Hardhat 本地链交互（chainId 31337）
-- [ ] Merkle Proof 验证流程：
-  用户输入学号 → 前端调用 `/api/whitelist/proof/{id}` 获取 proof → 调用合约 `verify()` → 通过后方可交易
-
-### Task 7: 端到端集成测试
-- [ ] 手动 E2E 流程：
-  1. `npx hardhat node` → 部署合约
-  2. `python relay/main.py` → 启动中继
-  3. 打开 `frontend/index.html` → 连接 MetaMask (Hardhat 账户)
-  4. 买家下单 → 卖家发货 → 买家收货 → 完成
-  5. 争议场景：买家 dispute → 2 位仲裁人投票 → 裁决执行
-- [ ] 记录并修复集成问题
-
----
-
-## Day 4（周四 6/17）：汇报准备 + Buffer
-
-### Task 8: PPT 素材与学术亮点提炼
-- [ ] Merkle 白名单性能对比数据（链上存储 vs 链下 Proof）
-- [ ] 影子账本状态隔离的安全论证
-- [ ] 2/3 多签的游戏论分析（为什么不是 1/2 或 3/3）
-
-### Task 9: 边界加固 + Gas 优化
-- [ ] 重入攻击防护检查（CEI 模式）
-- [ ] 整数溢出检查（Solidity ^0.8.0 已内置）
-- [ ] Gas 消耗对比测试
-
-### Task 10: 最终联调 + README
-- [ ] 全链路一键启动脚本 `start.sh`
-- [ ] `README.md` 含架构图、启动步骤、API 文档
-
----
-
-## 风险点与缓解
-
-| 风险 | 缓解 |
-|------|------|
-| Hardhat 本地链不稳定 | 备选 Ganache CLI |
-| ethers.js v6 API 不熟悉 | 提前打印 Cheatsheet |
-| MetaMask 连接 Hardhat 异常 | 重置账户 nonce |
-| 时间不足 | 优先保证核心流程（托管+仲裁），Merkle 白名单作为亮点独立演示 |
-
----
-
-> **Commit 策略**: 每个 Task 完成后立即 `git commit`，粒度细便于回溯。
+## 四、 编译生成步骤
+1. 修改 `docs/reports/academic-report.md` 完成内容增量升级。
+2. 运行 `python scripts/generate_docs.py` 重新触发编译。
+3. 校验生成的 `Campus_Secondhand_Blockchain_Academic_Report.docx` 的版式与黑白格式。
